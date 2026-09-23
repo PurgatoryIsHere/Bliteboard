@@ -23,12 +23,12 @@ function screenToWorld(sx, sy){
 // ---------- state ----------
 let objects = [];      // all board objects
 let selectedId = null;
-let editingObjectId = null; // hides an object's canvas-drawn text while its editor overlay is open
+let editingObjectId = null; 
 let history = ['[]'];
 let historyIndex = 0;
 let nextId = 1;
 let gridStyle = 'dots';   // 'dots' | 'lines' | 'none'
-let gridColor = null;     // null = use theme default
+let gridColor = null;    
 let currentBoardName = 'Untitled board';
 let activeBoardId = null; // set when the open board came from (or was saved to) the library
 
@@ -42,7 +42,6 @@ function snapshot(){
   return JSON.stringify(objects);
 }
 function pushHistory(){
-  // drop any redo branch beyond the current point, then record the new state
   history = history.slice(0, historyIndex + 1);
   history.push(snapshot());
   historyIndex = history.length - 1;
