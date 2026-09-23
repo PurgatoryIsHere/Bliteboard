@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<canvas id="board"></canvas>
+
+<div class="brand"><span class="dot"></span><input type="text" id="boardNameInput" class="board-name-input" value="Untitled board" spellcheck="false" title="Click to rename this board"></div>
+
+<div class="hint" id="hint">Scroll to zoom · Right-click-drag (or hold Space) to pan around</div>
+
+<button class="settings-btn layers-btn" id="layersBtn" title="Layers">
+  <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l9 5-9 5-9-5 9-5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 12l9 5 9-5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 16.5l9 5 9-5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+</button>
+<div class="settings-panel layers-panel" id="layersPanel">
+  <button class="layer-add-btn" id="addLayerBtn">+ Add layer</button>
+  <div id="layersList" class="layers-list"></div>
+</div>
+
+<button class="settings-btn boards-btn" id="boardsBtn" title="Saved boards">
+  <svg viewBox="0 0 24 24" fill="none"><path d="M5 4h11l3 3v13H5V4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 4v5h7V4" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 14h8v6H8v-6Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+</button>
+<div class="settings-panel boards-panel" id="boardsPanel">
+  <button class="board-save-btn" id="saveBoardBtn">Save current board…</button>
+  <div class="board-io-row">
+    <button class="board-io-btn" id="exportBoardBtn" title="Download the current board as a .json file">⬇ Download</button>
+    <button class="board-io-btn" id="importBoardBtn" title="Load a board from a .json file">⬆ Upload</button>
+  </div>
+  <input type="file" id="importBoardFile" accept="application/json,.json" hidden>
+  <div id="boardsList" class="boards-list"></div>
+</div>
+
+<button class="settings-btn shapes-btn" id="shapesBtn" title="Saved shapes">
+  <svg viewBox="0 0 24 24" fill="none"><path d="M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+</button>
+<div class="settings-panel shapes-panel" id="shapesPanel">
+  <div id="shapesGrid" class="shapes-grid"></div>
+</div>
+
+<button class="settings-btn" id="settingsBtn" title="Grid settings">
+  <svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.9-1.5-2-3.4-2.3.9a7.5 7.5 0 0 0-2.6-1.5L14 2h-4l-.4 2.4a7.5 7.5 0 0 0-2.6 1.5l-2.3-.9-2 3.4L4.6 10a7.6 7.6 0 0 0 0 3l-1.9 1.5 2 3.4 2.3-.9c.75.65 1.63 1.16 2.6 1.5L10 22h4l.4-2.4c.97-.34 1.85-.85 2.6-1.5l2.3.9 2-3.4-1.9-1.6Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+</button>
+<div class="settings-panel" id="settingsPanel">
+  <div class="style-row">
+    <label>Grid style</label>
+    <div class="segmented" id="gridStyleToggle">
+      <button class="seg-btn" data-value="dots">Dots</button>
+      <button class="seg-btn" data-value="lines">Lines</button>
+      <button class="seg-btn" data-value="none">None</button>
+    </div>
+  </div>
+  <div class="style-row">
+    <label>Grid color</label>
+    <input type="color" id="gridColorInput">
+  </div>
+</div>
+
+<div class="toolbar" id="toolbar">
+  <button class="tool-btn" data-tool="select" title="Select">
+    <span class="kbd">Select (V)</span>
+    <svg viewBox="0 0 24 24" fill="none"><path d="M5 3L19 12L12 13L9 20L5 3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="tool-btn" data-tool="pan" title="Pan">
+    <span class="kbd">Pan (H / Space / Right-click)</span>
+    <svg viewBox="0 0 24 24" fill="none"><path d="M8 11V6a1.5 1.5 0 0 1 3 0v4M11 10V4.5a1.5 1.5 0 0 1 3 0V10m0 .5V6a1.5 1.5 0 0 1 3 0v6m-9-1v6c0 3 2 5 5 5s5-2 5.5-4l1-4c.3-1.2-.5-2.3-1.5-2.3-.7 0-1.3.4-1.5 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="pen" title="Pen">
+    <span class="kbd">Pen (P)</span>
+    <svg viewBox="0 0 24 24" fill="none"><path d="M4 20l1-4L16 5l3 3L8 19l-4 1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="tool-btn" data-tool="eraser" title="Eraser">
+    <span class="kbd">Eraser (E)</span>
+    <svg viewBox="0 0 24 24" fill="none"><path d="M14 4l6 6-9 9H7l-3-3 10-12Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M7 19h13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+  </button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="rect" title="Rectangle">
+    <span class="kbd">Rectangle (R)</span>
+    <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="6" width="16" height="12" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg>
+  </button>
+  <button class="tool-btn" data-tool="ellipse" title="Ellipse">
+    <span class="kbd">Ellipse (O)</span>
+    <svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="12" rx="8" ry="6" stroke="currentColor" stroke-width="1.8"/></svg>
+  </button>
+  <button class="tool-btn" data-tool="line" title="Line / Arrow">
+    <span class="kbd">Line (L)</span>
+    <svg viewBox="0 0 24 24" fill="none"><path d="M5 19L19 5M19 5h-5M19 5v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="tool-btn" data-tool="fill" title="Fill">
+    <span class="kbd">Fill (F)</span>
+    <svg viewBox="0 0 24 24" fill="none"><path d="M11 3 4 10a3 3 0 0 0 0 4l5 5a3 3 0 0 0 4 0l6-6-8-8-4 4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4.5 12h13" stroke="currentColor" stroke-width="1.6"/><path d="M18 14c1 1.3 1.6 2.2 1.6 3.1 0 1-.7 1.9-1.6 1.9s-1.6-.9-1.6-1.9c0-.9.6-1.8 1.6-3.1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+  </button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="sticky" title="Sticky note">
+    <span class="kbd">Sticky note (N)</span>
+    <svg viewBox="0 0 24 24" fill="none"><path d="M4 4h13l3 3v13H4V4Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M17 4v3h3" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="tool-btn" data-tool="text" title="Text">
+    <span class="kbd">Text (T)</span>
+    <svg viewBox="0 0 24 24" fill="none"><path d="M5 6h14M12 6v13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+  </button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" id="imageToolBtn" title="Insert reference image">
+    <span class="kbd">Insert image</span>
+    <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10" r="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M4.5 16.5 9 12l3 3 3.5-3.5L19.5 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+</div>
+<input type="file" id="imageFileInput" accept="image/*" hidden>
+
+<div class="style-panel" id="stylePanel">
+  <div class="style-row" id="colorRow">
+    <label>Color</label>
+    <div class="swatches" id="swatches"></div>
+    <input type="color" id="customColor" value="#232428">
+  </div>
+  <div class="style-row" id="thicknessRow">
+    <label>Thickness</label>
+    <input type="range" id="thicknessSlider" min="0.5" max="40" step="0.5" value="1.5">
+    <input type="number" id="thicknessInput" min="0.5" max="40" step="0.5" value="1.5">
+    <div class="thickness-preview" id="thicknessPreview"><div class="dot"></div></div>
+  </div>
+  <div class="style-row" id="lineStyleRow">
+    <label>Style</label>
+    <div class="segmented" id="lineStyleToggle">
+      <button class="seg-btn" data-value="plain">Line</button>
+      <button class="seg-btn" data-value="arrow">Arrow</button>
+    </div>
+  </div>
+  <div class="style-row" id="radiusRow">
+    <label>Corners</label>
+    <input type="range" id="radiusSlider" min="0" max="60" step="1" value="0">
+  </div>
+  <div class="style-row" id="opacityRow">
+    <label>Opacity</label>
+    <input type="range" id="opacitySlider" min="0.1" max="1" step="0.05" value="0.6">
+  </div>
+  <div class="style-row" id="lockRow">
+    <button class="seg-btn" id="lockToggleBtn" style="padding:6px 12px;">🔒 Lock image</button>
+  </div>
+</div>
+
+<div class="actions">
+  <button class="action-btn" id="undoBtn" title="Undo (Ctrl+Z)">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="action-btn" id="redoBtn" title="Redo (Ctrl+Shift+Z)">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M15 7l5 5-5 5M20 12H9a5 5 0 0 0 0 10h1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="action-btn" id="clearBtn" title="Clear board">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="action-btn" id="saveShapeBtn" title="Save selection as a reusable shape">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M6 3h9l5 5v13H6V3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 3v5h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 11v6M9 14h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+  </button>
+</div>
+
+<div class="zoom-ctrl">
+  <button id="zoomOut">–</button>
+  <span class="zoom-pct" id="zoomPct" title="Reset to 100%">100%</span>
+  <button id="zoomIn">+</button>
+</div>
+
+<script src="shapes.js"></script>
+<script src="boards.js"></script>
+<script src="layers.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
