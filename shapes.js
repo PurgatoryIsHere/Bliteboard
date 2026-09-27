@@ -17,22 +17,25 @@ function makeThumbnail(obj){
   const cnv = document.createElement('canvas');
   cnv.width = size; cnv.height = size;
   const savedGlobalCtx = ctx;
-  ctx = cnv.getContext('2d');
-  ctx.fillStyle = '#f2f0ea';
-  ctx.fillRect(0, 0, size, size);
-  const b = boundsOf(obj);
-  const bw = Math.max(b.w, 1), bh = Math.max(b.h, 1);
-  const pad = 7;
-  const availW = size - pad*2, availH = size - pad*2;
-  const s = Math.min(availW/bw, availH/bh, 6);
-  const ox = pad + (availW - bw*s)/2 - b.x*s;
-  const oy = pad + (availH - bh*s)/2 - b.y*s;
-  ctx.save();
-  ctx.translate(ox, oy);
-  ctx.scale(s, s);
-  drawObject(obj, false, false);
-  ctx.restore();
-  ctx = savedGlobalCtx;
+  try{
+    ctx = cnv.getContext('2d');
+    ctx.fillStyle = '#f2f0ea';
+    ctx.fillRect(0, 0, size, size);
+    const b = boundsOf(obj);
+    const bw = Math.max(b.w, 1), bh = Math.max(b.h, 1);
+    const pad = 7;
+    const availW = size - pad*2, availH = size - pad*2;
+    const s = Math.min(availW/bw, availH/bh, 6);
+    const ox = pad + (availW - bw*s)/2 - b.x*s;
+    const oy = pad + (availH - bh*s)/2 - b.y*s;
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.scale(s, s);
+    drawObject(obj, false, false);
+    ctx.restore();
+  } finally {
+    ctx = savedGlobalCtx; // must always restore, even if drawObject throws
+  }
   return cnv;
 }
 

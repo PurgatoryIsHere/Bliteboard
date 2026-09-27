@@ -23,12 +23,18 @@ function screenToWorld(sx, sy){
 // ---------- state ----------
 let objects = [];      // all board objects
 let selectedId = null;
-let editingObjectId = null; 
+let multiSelectedIds = []; // ids selected via marquee drag, when more than one object is involved
+let isMarqueeSelecting = false;
+let marqueeStart = null;
+let marqueeEnd = null;
+let clipboardObjects = []; // deep-cloned copies from the last Ctrl+C
+let pasteOffsetCount = 0;  // increments per paste so repeated Ctrl+V cascades outward
+let editingObjectId = null; // hides an object's canvas-drawn text while its editor overlay is open
 let history = ['[]'];
 let historyIndex = 0;
 let nextId = 1;
 let gridStyle = 'dots';   // 'dots' | 'lines' | 'none'
-let gridColor = null;    
+let gridColor = null;     // null = use theme default
 let currentBoardName = 'Untitled board';
 let activeBoardId = null; // set when the open board came from (or was saved to) the library
 
@@ -42,6 +48,7 @@ function snapshot(){
   return JSON.stringify(objects);
 }
 function pushHistory(){
+  // drop any redo branch beyond the current point, then record the new state
   history = history.slice(0, historyIndex + 1);
   history.push(snapshot());
   historyIndex = history.length - 1;
@@ -81,13 +88,35 @@ function setTool(t){
   tool = t;
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
   canvas.className = 'tool-' + t;
-  selectedId = null;
+  if(t !== 'fill'){
+    // Fill deliberately depends on whatever is already selected, so
+    // switching into it must not wipe that out the way every other tool does.
+    selectedId = null;
+    multiSelectedIds = [];
+  }
   refreshStylePanel();
   render();
 }
 
+// Safe element accessors: a missing element (e.g. HTML/JS drifting out of
+// sync, as just happened with groupBtn/ungroupBtn) logs a warning instead
+// of throwing and silently breaking every caller downstream of it.
+function bySelector(id){
+  const el = document.getElementById(id);
+  if(!el) console.warn('Expected element #' + id + ' not found in the page');
+  return el;
+}
+function setDisabled(id, value){
+  const el = bySelector(id);
+  if(el) el.disabled = value;
+}
+function setDisplay(id, value){
+  const el = bySelector(id);
+  if(el) el.style.display = value;
+}
+
 function refreshStylePanel(){
-  const panel = document.getElementById('stylePanel');
+  const panel = bySelector('stylePanel');
   const obj = (tool === 'select') ? objects.find(o => o.id === selectedId) : null;
   let showColor, showThickness, showLineStyle, showRadius;
   const showImageControls = !!(obj && obj.type === 'image');
@@ -103,12 +132,16 @@ function refreshStylePanel(){
     if(obj.type === 'rect'){ currentRadius = obj.radius || 0; radiusSlider.value = currentRadius; }
     updateThicknessPreview();
     document.querySelectorAll('.swatch').forEach(el => el.classList.toggle('selected', el.dataset.color === currentColor));
-    document.getElementById('customColor').value = currentColor;
+    const customColorEl = bySelector('customColor');
+    if(customColorEl) customColorEl.value = currentColor;
     if(showImageControls){
-      document.getElementById('opacitySlider').value = typeof obj.opacity === 'number' ? obj.opacity : 0.6;
-      const lockBtn = document.getElementById('lockToggleBtn');
-      lockBtn.textContent = obj.locked ? '🔓 Unlock image' : '🔒 Lock image';
-      lockBtn.classList.toggle('active', !!obj.locked);
+      const opacityEl = bySelector('opacitySlider');
+      if(opacityEl) opacityEl.value = typeof obj.opacity === 'number' ? obj.opacity : 0.6;
+      const lockBtn = bySelector('lockToggleBtn');
+      if(lockBtn){
+        lockBtn.textContent = obj.locked ? '🔓 Unlock image' : '🔒 Lock image';
+        lockBtn.classList.toggle('active', !!obj.locked);
+      }
     }
   } else {
     showColor = ['pen','rect','ellipse','line','sticky','text','fill'].includes(tool);
@@ -116,17 +149,25 @@ function refreshStylePanel(){
     showLineStyle = (tool === 'line');
     showRadius = (tool === 'rect');
   }
-  panel.classList.toggle('show', showColor || showThickness || showImageControls);
-  document.getElementById('colorRow').style.display = showColor ? 'flex' : 'none';
-  document.getElementById('thicknessRow').style.display = showThickness ? 'flex' : 'none';
-  document.getElementById('lineStyleRow').style.display = showLineStyle ? 'flex' : 'none';
-  document.getElementById('radiusRow').style.display = showRadius ? 'flex' : 'none';
-  document.getElementById('opacityRow').style.display = showImageControls ? 'flex' : 'none';
-  document.getElementById('lockRow').style.display = showImageControls ? 'flex' : 'none';
+  if(panel) panel.classList.toggle('show', showColor || showThickness || showImageControls);
+  setDisplay('colorRow', showColor ? 'flex' : 'none');
+  setDisplay('thicknessRow', showThickness ? 'flex' : 'none');
+  setDisplay('lineStyleRow', showLineStyle ? 'flex' : 'none');
+  setDisplay('radiusRow', showRadius ? 'flex' : 'none');
+  setDisplay('opacityRow', showImageControls ? 'flex' : 'none');
+  setDisplay('lockRow', showImageControls ? 'flex' : 'none');
   document.querySelectorAll('#lineStyleToggle .seg-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.value === currentLineStyle);
   });
-  document.getElementById('saveShapeBtn').disabled = !obj;
+  setDisabled('saveShapeBtn', !obj);
+
+  setDisabled('groupBtn', multiSelectedIds.length < 2);
+  const ungroupIds = multiSelectedIds.length > 1 ? multiSelectedIds : (selectedId ? [selectedId] : []);
+  const canUngroup = ungroupIds.some(id => {
+    const o = objects.find(x => x.id === id);
+    return o && o.groupId;
+  });
+  setDisabled('ungroupBtn', !canUngroup);
 }
 
 // build swatches
@@ -251,11 +292,27 @@ window.addEventListener('keydown', (e) => {
       if(e.shiftKey) redo(); else undo();
     } else if(e.key.toLowerCase() === 'y'){
       e.preventDefault(); redo();
+    } else if(e.key.toLowerCase() === 'c'){
+      e.preventDefault();
+      copySelection();
+    } else if(e.key.toLowerCase() === 'v'){
+      e.preventDefault();
+      pasteClipboard();
+    } else if(e.key.toLowerCase() === 'g'){
+      e.preventDefault();
+      if(e.shiftKey) ungroupSelection(); else groupSelection();
     }
     return;
   }
   if(e.code === 'Space'){ spaceHeld = true; canvas.style.cursor='grab'; return; }
   if(e.key === 'Delete' || e.key === 'Backspace'){
+    if(multiSelectedIds.length > 1){
+      objects = objects.filter(o => !multiSelectedIds.includes(o.id));
+      multiSelectedIds = [];
+      refreshStylePanel();
+      pushHistory(); render();
+      return;
+    }
     if(selectedId){
       const selObj = objects.find(o => o.id === selectedId);
       if(selObj && isLayerLocked(selObj.layerId)) return;
@@ -322,10 +379,97 @@ let resizeAnchor = null;
 let resizeStartBounds = null;
 let resizeStartPoints = null;
 let resizeStartFontSize = null;
+let isRotating = false;
+let rotateStartAngle = 0;
+let rotateStartRotation = 0;
+let isGroupRotating = false;
+let groupRotatePivot = null;
+let groupRotateStartAngle = 0;
+let groupRotateSnapshot = [];
 const HANDLE_RADIUS = 5;
 const HANDLE_HIT_RADIUS = 11;
+const ROTATE_HANDLE_DIST = 26; // fixed screen-pixel distance above the selection box
 
 function idOf(){ return nextId++; }
+
+// Rotation is a pure transform layered on top of an object's own (always
+// axis-aligned) x/y/w/h or points — nothing else needs to know an object
+// is rotated except: rendering (wraps the draw in a canvas rotate),
+// hit-testing (converts the click into the object's unrotated local
+// space first), and the resize drag (does the same for the mouse point).
+function centerOf(o){
+  const b = boundsOf(o);
+  return { x: b.x + b.w/2, y: b.y + b.h/2 };
+}
+function toLocal(wx, wy, o){
+  const rot = o.rotation || 0;
+  if(!rot) return { x: wx, y: wy };
+  const c = centerOf(o);
+  const cos = Math.cos(-rot), sin = Math.sin(-rot);
+  const dx = wx - c.x, dy = wy - c.y;
+  return { x: c.x + dx*cos - dy*sin, y: c.y + dx*sin + dy*cos };
+}
+
+// Group rotation: the whole multi-selection revolves together around the
+// center of their combined bounding box, while each member also keeps
+// spinning individually by that same delta (its own o.rotation increases
+// too) — so relative orientation within the group is preserved.
+// The plain axis-aligned box around a rotated object's own (local) x/y/w/h
+// doesn't reflect what it actually looks like on screen. This rotates the
+// box's 4 corners around the object's center and re-encloses them, giving
+// the true world-space footprint — used for the multi-select group box,
+// never for a single object's own (correctly locally-rotated) outline.
+function worldBoundsOf(o){
+  const b = boundsOf(o);
+  if(!o.rotation) return b;
+  const c = centerOf(o);
+  const cos = Math.cos(o.rotation), sin = Math.sin(o.rotation);
+  const corners = [
+    {x:b.x, y:b.y}, {x:b.x+b.w, y:b.y}, {x:b.x, y:b.y+b.h}, {x:b.x+b.w, y:b.y+b.h}
+  ];
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  corners.forEach(p => {
+    const dx = p.x-c.x, dy = p.y-c.y;
+    const rx = c.x + dx*cos - dy*sin, ry = c.y + dx*sin + dy*cos;
+    minX = Math.min(minX, rx); minY = Math.min(minY, ry);
+    maxX = Math.max(maxX, rx); maxY = Math.max(maxY, ry);
+  });
+  return { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
+}
+function combinedBoundsOf(ids){
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  ids.forEach(id => {
+    const o = objects.find(x => x.id === id);
+    if(!o) return;
+    const b = worldBoundsOf(o);
+    minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+    maxX = Math.max(maxX, b.x+b.w); maxY = Math.max(maxY, b.y+b.h);
+  });
+  return { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
+}
+function groupRotateHandlePos(){
+  const b = combinedBoundsOf(multiSelectedIds);
+  return { x: b.x + b.w/2, y: b.y - ROTATE_HANDLE_DIST/scale };
+}
+function hitTestGroupRotateHandle(wx, wy){
+  if(multiSelectedIds.length < 2) return false;
+  const p = groupRotateHandlePos();
+  return Math.hypot(wx-p.x, wy-p.y) < HANDLE_HIT_RADIUS/scale;
+}
+// Shift always hard-snaps to 15° steps (fine control). Otherwise, rotation
+// is free — except within a few degrees of an exact quarter-turn (0/90/
+// 180/270), where it snaps there, so squaring something up to 90 or
+// flipping it 180 is easy without needing to hold anything down.
+function applyRotationSnap(rotation, shiftHeld){
+  if(shiftHeld){
+    const step = Math.PI / 12; // 15 degrees
+    return Math.round(rotation / step) * step;
+  }
+  const quarter = Math.PI / 2;
+  const nearest = Math.round(rotation / quarter) * quarter;
+  const tolerance = Math.PI / 45; // 4 degrees
+  return Math.abs(rotation - nearest) < tolerance ? nearest : rotation;
+}
 
 
 function cornersFromBounds(b){
@@ -337,22 +481,30 @@ function cornersFromBounds(b){
   ];
 }
 function getHandles(o){
+  let handles;
   if(o.type === 'rect' || o.type === 'ellipse' || o.type === 'sticky' || o.type === 'fill'){
-    return cornersFromBounds({x:o.x, y:o.y, w:o.w, h:o.h});
+    handles = cornersFromBounds({x:o.x, y:o.y, w:o.w, h:o.h});
   } else if(o.type === 'image'){
-    return o.locked ? [] : cornersFromBounds({x:o.x, y:o.y, w:o.w, h:o.h});
+    handles = o.locked ? [] : cornersFromBounds({x:o.x, y:o.y, w:o.w, h:o.h});
   } else if(o.type === 'line'){
-    const handles = [];
+    handles = [];
     o.points.forEach((p, i) => handles.push({id:'pt:'+i, x:p.x, y:p.y, smooth: !!p.smooth}));
     for(let i = 0; i < o.points.length - 1; i++){
       const a = o.points[i], b = o.points[i+1];
       handles.push({id:'mid:'+i, x:(a.x+b.x)/2, y:(a.y+b.y)/2, mid:true});
     }
-    return handles;
   } else if(o.type === 'path' || o.type === 'text'){
-    return cornersFromBounds(boundsOf(o));
+    handles = cornersFromBounds(boundsOf(o));
+  } else {
+    handles = [];
   }
-  return [];
+  // every type that gets any handles at all also gets a rotate handle,
+  // a fixed screen-distance above the (unrotated, local) bounding box
+  if(handles.length){
+    const b = boundsOf(o);
+    handles.push({ id: 'rotate', x: b.x + b.w/2, y: b.y - ROTATE_HANDLE_DIST/scale, rotate: true });
+  }
+  return handles;
 }
 function cornerPoint(b, id){
   switch(id){
@@ -375,10 +527,11 @@ function anchorForHandle(b, id){
 function hitTestHandles(wx, wy){
   const obj = objects.find(o => o.id === selectedId);
   if(!obj || isLayerLocked(obj.layerId)) return null;
+  const p = obj.rotation ? toLocal(wx, wy, obj) : {x:wx, y:wy};
   const hitR = HANDLE_HIT_RADIUS / scale;
   const handles = getHandles(obj);
   for(const h of handles){
-    if(Math.hypot(wx - h.x, wy - h.y) < hitR) return { obj, id: h.id };
+    if(Math.hypot(p.x - h.x, p.y - h.y) < hitR) return { obj, id: h.id };
   }
   return null;
 }
@@ -388,24 +541,26 @@ function hitTest(wx, wy){
   for(let idx = order.length - 1; idx >= 0; idx--){
     const o = order[idx];
     if(!isLayerVisible(o.layerId) || isLayerLocked(o.layerId)) continue;
+    const p = o.rotation ? toLocal(wx, wy, o) : {x:wx, y:wy};
+    const lx = p.x, ly = p.y;
     if(o.type === 'path'){
-      for(const p of o.points){
-        if(Math.hypot(p.x - wx, p.y - wy) < Math.max(8, o.width)) return o;
+      for(const pt of o.points){
+        if(Math.hypot(pt.x - lx, pt.y - ly) < Math.max(8, o.width)) return o;
       }
     } else if(o.type === 'rect' || o.type === 'sticky' || o.type === 'image' || o.type === 'fill'){
-      if(wx >= o.x && wx <= o.x + o.w && wy >= o.y && wy <= o.y + o.h) return o;
+      if(lx >= o.x && lx <= o.x + o.w && ly >= o.y && ly <= o.y + o.h) return o;
     } else if(o.type === 'ellipse'){
       const cx = o.x + o.w/2, cy = o.y + o.h/2;
       const rx = Math.abs(o.w/2) || 1, ry = Math.abs(o.h/2) || 1;
-      if(((wx-cx)**2)/(rx*rx) + ((wy-cy)**2)/(ry*ry) <= 1) return o;
+      if(((lx-cx)**2)/(rx*rx) + ((ly-cy)**2)/(ry*ry) <= 1) return o;
     } else if(o.type === 'line'){
       for(let i = 0; i < o.points.length - 1; i++){
         const a = o.points[i], b = o.points[i+1];
-        if(distToSegment(wx, wy, a.x, a.y, b.x, b.y) < Math.max(8, o.width)) return o;
+        if(distToSegment(lx, ly, a.x, a.y, b.x, b.y) < Math.max(8, o.width)) return o;
       }
     } else if(o.type === 'text'){
       const w = (o.text.length || 1) * o.fontSize * 0.55;
-      if(wx >= o.x && wx <= o.x + w && wy >= o.y - o.fontSize && wy <= o.y + 6) return o;
+      if(lx >= o.x && lx <= o.x + w && ly >= o.y - o.fontSize && ly <= o.y + 6) return o;
     }
   }
   return null;
@@ -433,8 +588,32 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   if(tool === 'select'){
+    if(multiSelectedIds.length > 1 && hitTestGroupRotateHandle(w.x, w.y)){
+      isGroupRotating = true;
+      groupRotatePivot = (() => { const b = combinedBoundsOf(multiSelectedIds); return {x:b.x+b.w/2, y:b.y+b.h/2}; })();
+      groupRotateStartAngle = Math.atan2(w.y - groupRotatePivot.y, w.x - groupRotatePivot.x);
+      groupRotateSnapshot = multiSelectedIds.map(id => {
+        const o = objects.find(x => x.id === id);
+        return {
+          id,
+          rotation: o.rotation || 0,
+          x: o.x, y: o.y,
+          points: o.points ? JSON.parse(JSON.stringify(o.points)) : null,
+          center: centerOf(o),
+        };
+      });
+      return;
+    }
     const handleHit = hitTestHandles(w.x, w.y);
     if(handleHit){
+      if(handleHit.id === 'rotate'){
+        isRotating = true;
+        resizeObj = handleHit.obj;
+        const c = centerOf(resizeObj);
+        rotateStartAngle = Math.atan2(w.y - c.y, w.x - c.x);
+        rotateStartRotation = resizeObj.rotation || 0;
+        return;
+      }
       if(handleHit.obj.type === 'line' && handleHit.id.startsWith('pt:') && e.altKey){
         const idx = parseInt(handleHit.id.split(':')[1], 10);
         const pt = handleHit.obj.points[idx];
@@ -446,11 +625,12 @@ canvas.addEventListener('pointerdown', (e) => {
       isResizing = true;
       resizeObj = handleHit.obj;
       resizeHandleId = handleHit.id;
+      const lw = resizeObj.rotation ? toLocal(w.x, w.y, resizeObj) : w; // points/x/y are always stored unrotated
       if(resizeObj.type === 'line'){
         if(resizeHandleId.startsWith('mid:')){
           // subdividing: insert a real point at this midpoint, then drag it
           const segIdx = parseInt(resizeHandleId.split(':')[1], 10);
-          resizeObj.points.splice(segIdx + 1, 0, {x:w.x, y:w.y});
+          resizeObj.points.splice(segIdx + 1, 0, {x:lw.x, y:lw.y});
           resizeHandleId = 'pt:' + (segIdx + 1);
         }
         return;
@@ -465,11 +645,47 @@ canvas.addEventListener('pointerdown', (e) => {
       return;
     }
     const hit = hitTest(w.x, w.y);
-    selectedId = hit ? hit.id : null;
-    if(hit && !(hit.type === 'image' && hit.locked)){
+
+    if(hit && multiSelectedIds.length > 1 && multiSelectedIds.includes(hit.id)){
+      // clicked on a member of an existing multi-selection: drag the whole group
       isDragging = true;
       dragOffset = { x: w.x, y: w.y };
+      return;
     }
+
+    if(hit && hit.groupId){
+      // clicking any member of a saved group selects (and drags) the whole group
+      const groupIds = objects.filter(o => o.groupId === hit.groupId).map(o => o.id);
+      if(groupIds.length > 1){
+        selectedId = null;
+        multiSelectedIds = groupIds;
+        isDragging = true;
+        dragOffset = { x: w.x, y: w.y };
+        refreshStylePanel();
+        render();
+        return;
+      }
+    }
+
+    if(hit){
+      multiSelectedIds = [];
+      selectedId = hit.id;
+      if(!(hit.type === 'image' && hit.locked)){
+        isDragging = true;
+        dragOffset = { x: w.x, y: w.y };
+      }
+      refreshStylePanel();
+      render();
+      return;
+    }
+
+    // clicked empty space: begin a possible marquee drag (a plain click
+    // with no movement just clears the selection, handled on pointerup)
+    selectedId = null;
+    multiSelectedIds = [];
+    isMarqueeSelecting = true;
+    marqueeStart = w;
+    marqueeEnd = w;
     refreshStylePanel();
     render();
     return;
@@ -547,33 +763,87 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
 
+  if(isRotating && resizeObj){
+    const c = centerOf(resizeObj);
+    const currentAngle = Math.atan2(w.y - c.y, w.x - c.x);
+    let rotation = rotateStartRotation + (currentAngle - rotateStartAngle);
+    rotation = applyRotationSnap(rotation, e.shiftKey);
+    resizeObj.rotation = rotation;
+    render();
+    return;
+  }
+
+  if(isGroupRotating && groupRotatePivot){
+    const currentAngle = Math.atan2(w.y - groupRotatePivot.y, w.x - groupRotatePivot.x);
+    let delta = currentAngle - groupRotateStartAngle;
+    delta = applyRotationSnap(delta, e.shiftKey);
+    const cos = Math.cos(delta), sin = Math.sin(delta);
+    groupRotateSnapshot.forEach(snap => {
+      const o = objects.find(x => x.id === snap.id);
+      if(!o) return;
+      const dx = snap.center.x - groupRotatePivot.x, dy = snap.center.y - groupRotatePivot.y;
+      const newCenterX = groupRotatePivot.x + dx*cos - dy*sin;
+      const newCenterY = groupRotatePivot.y + dx*sin + dy*cos;
+      const shiftX = newCenterX - snap.center.x, shiftY = newCenterY - snap.center.y;
+      if(snap.points){
+        o.points = snap.points.map(p => ({ ...p, x: p.x + shiftX, y: p.y + shiftY }));
+      } else {
+        o.x = snap.x + shiftX;
+        o.y = snap.y + shiftY;
+      }
+      o.rotation = snap.rotation + delta;
+    });
+    render();
+    return;
+  }
+
   if(isResizing && resizeObj){
+    // x/y/points are always stored unrotated, so the mouse point needs to
+    // be converted into that same local space before any of this math
+    const lw = resizeObj.rotation ? toLocal(w.x, w.y, resizeObj) : w;
     if(['rect','ellipse','sticky','image','fill'].includes(resizeObj.type)){
-      const nx = Math.min(resizeAnchor.x, w.x);
-      const ny = Math.min(resizeAnchor.y, w.y);
+      const nx = Math.min(resizeAnchor.x, lw.x);
+      const ny = Math.min(resizeAnchor.y, lw.y);
       resizeObj.x = nx;
       resizeObj.y = ny;
-      resizeObj.w = Math.abs(w.x - resizeAnchor.x);
-      resizeObj.h = Math.abs(w.y - resizeAnchor.y);
+      resizeObj.w = Math.abs(lw.x - resizeAnchor.x);
+      resizeObj.h = Math.abs(lw.y - resizeAnchor.y);
     } else if(resizeObj.type === 'line'){
       const idx = parseInt(resizeHandleId.split(':')[1], 10);
-      resizeObj.points[idx].x = w.x;
-      resizeObj.points[idx].y = w.y;
+      resizeObj.points[idx].x = lw.x;
+      resizeObj.points[idx].y = lw.y;
     } else if(resizeObj.type === 'path'){
       const orig = cornerPoint(resizeStartBounds, resizeHandleId);
-      const scaleX = Math.abs(orig.x - resizeAnchor.x) > 0.001 ? (w.x - resizeAnchor.x) / (orig.x - resizeAnchor.x) : 1;
-      const scaleY = Math.abs(orig.y - resizeAnchor.y) > 0.001 ? (w.y - resizeAnchor.y) / (orig.y - resizeAnchor.y) : 1;
+      const scaleX = Math.abs(orig.x - resizeAnchor.x) > 0.001 ? (lw.x - resizeAnchor.x) / (orig.x - resizeAnchor.x) : 1;
+      const scaleY = Math.abs(orig.y - resizeAnchor.y) > 0.001 ? (lw.y - resizeAnchor.y) / (orig.y - resizeAnchor.y) : 1;
       resizeObj.points = resizeStartPoints.map(p => ({
         x: resizeAnchor.x + (p.x - resizeAnchor.x) * scaleX,
         y: resizeAnchor.y + (p.y - resizeAnchor.y) * scaleY,
       }));
     } else if(resizeObj.type === 'text'){
       const orig = cornerPoint(resizeStartBounds, resizeHandleId);
-      const scaleX = Math.abs(orig.x - resizeAnchor.x) > 0.001 ? (w.x - resizeAnchor.x) / (orig.x - resizeAnchor.x) : 1;
-      const scaleY = Math.abs(orig.y - resizeAnchor.y) > 0.001 ? (w.y - resizeAnchor.y) / (orig.y - resizeAnchor.y) : 1;
+      const scaleX = Math.abs(orig.x - resizeAnchor.x) > 0.001 ? (lw.x - resizeAnchor.x) / (orig.x - resizeAnchor.x) : 1;
+      const scaleY = Math.abs(orig.y - resizeAnchor.y) > 0.001 ? (lw.y - resizeAnchor.y) / (orig.y - resizeAnchor.y) : 1;
       const scale = Math.max(Math.abs(scaleX), Math.abs(scaleY));
       resizeObj.fontSize = Math.max(8, Math.min(300, resizeStartFontSize * scale));
     }
+    render();
+    return;
+  }
+
+  if(isMarqueeSelecting){
+    marqueeEnd = w;
+    render();
+    return;
+  }
+
+  if(isDragging && multiSelectedIds.length > 1){
+    const dx = w.x - dragOffset.x, dy = w.y - dragOffset.y;
+    multiSelectedIds.forEach(id => {
+      const obj = objects.find(o => o.id === id);
+      if(obj && !isLayerLocked(obj.layerId)) moveObject(obj, dx, dy);
+    });
+    dragOffset = w;
     render();
     return;
   }
@@ -622,8 +892,10 @@ canvas.addEventListener('pointermove', (e) => {
   if(tool === 'select' && !isDragging){
     const h = hitTestHandles(w.x, w.y);
     if(h){
-      const cursors = {tl:'nwse-resize', br:'nwse-resize', tr:'nesw-resize', bl:'nesw-resize'};
+      const cursors = {tl:'nwse-resize', br:'nwse-resize', tr:'nesw-resize', bl:'nesw-resize', rotate:'grab'};
       canvas.style.cursor = cursors[h.id] || 'crosshair';
+    } else if(multiSelectedIds.length > 1 && hitTestGroupRotateHandle(w.x, w.y)){
+      canvas.style.cursor = 'grab';
     } else {
       canvas.style.cursor = 'default';
     }
@@ -640,8 +912,115 @@ function moveObject(obj, dx, dy){
   }
 }
 
+function copySelection(){
+  let ids = [];
+  if(multiSelectedIds.length > 1) ids = multiSelectedIds;
+  else if(selectedId) ids = [selectedId];
+  if(!ids.length) return;
+  clipboardObjects = ids
+    .map(id => objects.find(o => o.id === id))
+    .filter(Boolean)
+    .map(o => JSON.parse(JSON.stringify(o)));
+  pasteOffsetCount = 0;
+}
+
+function pasteClipboard(){
+  if(!clipboardObjects.length) return;
+  pasteOffsetCount++;
+  const offset = 24 * pasteOffsetCount;
+  const newIds = [];
+  const groupIdMap = {}; // pasted copies form their own group, separate from the source
+  clipboardObjects.forEach(src => {
+    const clone = JSON.parse(JSON.stringify(src));
+    clone.id = idOf();
+    clone.layerId = activeLayerId;
+    if(clone.groupId){
+      if(!groupIdMap[clone.groupId]) groupIdMap[clone.groupId] = newGroupId();
+      clone.groupId = groupIdMap[clone.groupId];
+    }
+    moveObject(clone, offset, offset);
+    objects.push(clone);
+    newIds.push(clone.id);
+  });
+  setTool('select');
+  if(newIds.length === 1){
+    selectedId = newIds[0];
+  } else {
+    multiSelectedIds = newIds;
+  }
+  refreshStylePanel();
+  pushHistory();
+  render();
+}
+
+function newGroupId(){
+  return 'group_' + Date.now() + '_' + Math.floor(Math.random()*100000);
+}
+
+function groupSelection(){
+  if(multiSelectedIds.length < 2) return;
+  const gid = newGroupId();
+  multiSelectedIds.forEach(id => {
+    const obj = objects.find(o => o.id === id);
+    if(obj) obj.groupId = gid;
+  });
+  refreshStylePanel();
+  pushHistory();
+  render();
+}
+
+function ungroupSelection(){
+  let ids = [];
+  if(multiSelectedIds.length > 1) ids = multiSelectedIds;
+  else if(selectedId) ids = [selectedId];
+  if(!ids.length) return;
+  const groupIds = new Set();
+  ids.forEach(id => {
+    const obj = objects.find(o => o.id === id);
+    if(obj && obj.groupId) groupIds.add(obj.groupId);
+  });
+  if(!groupIds.size) return;
+  objects.forEach(o => {
+    if(o.groupId && groupIds.has(o.groupId)) delete o.groupId;
+  });
+  refreshStylePanel();
+  pushHistory();
+  render();
+}
+
 canvas.addEventListener('pointerup', (e) => {
   if(isPanning){ isPanning = false; canvas.classList.remove('panning'); }
+  if(isMarqueeSelecting){
+    isMarqueeSelecting = false;
+    const x1 = Math.min(marqueeStart.x, marqueeEnd.x), x2 = Math.max(marqueeStart.x, marqueeEnd.x);
+    const y1 = Math.min(marqueeStart.y, marqueeEnd.y), y2 = Math.max(marqueeStart.y, marqueeEnd.y);
+    // ignore near-zero drags so a plain click still just deselects
+    if((x2-x1) > 3/scale || (y2-y1) > 3/scale){
+      let found = getPaintOrder().filter(o => {
+        if(!isLayerVisible(o.layerId) || isLayerLocked(o.layerId)) return false;
+        const b = boundsOf(o);
+        return b.x < x2 && b.x+b.w > x1 && b.y < y2 && b.y+b.h > y1;
+      }).map(o => o.id);
+      // if the marquee only caught part of a group, pull in the rest of that group too
+      const expanded = new Set(found);
+      found.forEach(id => {
+        const obj = objects.find(o => o.id === id);
+        if(obj && obj.groupId){
+          objects.forEach(o => { if(o.groupId === obj.groupId) expanded.add(o.id); });
+        }
+      });
+      found = [...expanded];
+      if(found.length === 1){ selectedId = found[0]; multiSelectedIds = []; }
+      else if(found.length > 1){ selectedId = null; multiSelectedIds = found; }
+      else { selectedId = null; multiSelectedIds = []; }
+    }
+    marqueeStart = null; marqueeEnd = null;
+    refreshStylePanel();
+    render();
+    return;
+  }
+  if(isRotating){ isRotating = false; resizeObj = null; pushHistory(); }
+  if(isGroupRotating){ isGroupRotating = false; groupRotatePivot = null; groupRotateSnapshot = []; pushHistory(); }
   if(isResizing){
     isResizing = false; resizeObj = null; resizeHandleId = null; resizeAnchor = null;
     resizeStartBounds = null; resizeStartPoints = null; resizeStartFontSize = null;
@@ -820,6 +1199,51 @@ function render(){
   });
   if(previewShape) drawObject(previewShape, false, true);
 
+  if(multiSelectedIds.length > 1){
+    // one dashed box around the whole selection's combined bounds, rather
+    // than a separate box per object
+    const gb = combinedBoundsOf(multiSelectedIds);
+    ctx.save();
+    ctx.strokeStyle = '#4a5cf0';
+    ctx.lineWidth = 1.5/scale;
+    ctx.setLineDash([5/scale, 4/scale]);
+    ctx.strokeRect(gb.x-6, gb.y-6, gb.w+12, gb.h+12);
+    ctx.restore();
+
+    const handlePos = { x: gb.x + gb.w/2, y: gb.y - ROTATE_HANDLE_DIST/scale };
+    ctx.save();
+    ctx.strokeStyle = 'rgba(74,92,240,0.6)';
+    ctx.lineWidth = 1/scale;
+    ctx.setLineDash([3/scale, 3/scale]);
+    ctx.beginPath();
+    ctx.moveTo(gb.x + gb.w/2, gb.y);
+    ctx.lineTo(handlePos.x, handlePos.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const r = HANDLE_RADIUS/scale;
+    ctx.beginPath();
+    ctx.arc(handlePos.x, handlePos.y, r, 0, Math.PI*2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 1.5/scale;
+    ctx.strokeStyle = '#4a5cf0';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if(isMarqueeSelecting && marqueeStart && marqueeEnd){
+    const x1 = Math.min(marqueeStart.x, marqueeEnd.x), x2 = Math.max(marqueeStart.x, marqueeEnd.x);
+    const y1 = Math.min(marqueeStart.y, marqueeEnd.y), y2 = Math.max(marqueeStart.y, marqueeEnd.y);
+    ctx.save();
+    ctx.fillStyle = 'rgba(74,92,240,0.10)';
+    ctx.strokeStyle = 'rgba(74,92,240,0.8)';
+    ctx.lineWidth = 1/scale;
+    ctx.setLineDash([4/scale, 3/scale]);
+    ctx.fillRect(x1, y1, x2-x1, y2-y1);
+    ctx.strokeRect(x1, y1, x2-x1, y2-y1);
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
@@ -863,6 +1287,15 @@ function drawGrid(color){
 }
 
 function drawObject(o, selected, isPreview){
+  const rotated = !!o.rotation;
+  if(rotated){
+    ctx.save();
+    const c = centerOf(o);
+    ctx.translate(c.x, c.y);
+    ctx.rotate(o.rotation);
+    ctx.translate(-c.x, -c.y);
+  }
+ try{
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   if(o.type === 'image'){
     const entry = getCachedImage(o);
@@ -982,10 +1415,33 @@ function drawObject(o, selected, isPreview){
         ctx.strokeRect(b.x, b.y, b.w, b.h);
         ctx.setLineDash([]);
       }
+      // a dashed line connecting the top of the box to the rotate handle
+      const rotateHandle = handles.find(h => h.rotate);
+      if(rotateHandle){
+        ctx.strokeStyle = 'rgba(74,92,240,0.6)';
+        ctx.lineWidth = 1 / scale;
+        ctx.setLineDash([3/scale, 3/scale]);
+        ctx.beginPath();
+        ctx.moveTo(b.x + b.w/2, b.y);
+        ctx.lineTo(rotateHandle.x, rotateHandle.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       // draggable handles: full-size solid dots for real points (diamonds
       // for ones set to "curve"), smaller translucent dots for midpoints
-      // you can drag to subdivide
+      // you can drag to subdivide, a plain circle for rotate
       handles.forEach(h => {
+        if(h.rotate){
+          const r = HANDLE_RADIUS / scale;
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, r, 0, Math.PI*2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.lineWidth = 1.5/scale;
+          ctx.strokeStyle = '#4a5cf0';
+          ctx.stroke();
+          return;
+        }
         const r = (h.mid ? HANDLE_RADIUS*0.6 : HANDLE_RADIUS) / scale;
         ctx.beginPath();
         if(h.smooth){
@@ -1004,6 +1460,9 @@ function drawObject(o, selected, isPreview){
     }
     ctx.restore();
   }
+ } finally {
+   if(rotated) ctx.restore();
+ }
 }
 
 function boundsOf(o){
@@ -1086,6 +1545,8 @@ document.getElementById('clearBtn').addEventListener('click', () => {
 });
 document.getElementById('undoBtn').addEventListener('click', undo);
 document.getElementById('redoBtn').addEventListener('click', redo);
+document.getElementById('groupBtn').addEventListener('click', groupSelection);
+document.getElementById('ungroupBtn').addEventListener('click', ungroupSelection);
 
 // ---------- reference images ----------
 const imageCache = {}; // src -> HTMLImageElement, so drawObject doesn't reload every frame
@@ -1134,15 +1595,18 @@ document.getElementById('imageFileInput').addEventListener('change', (e) => {
 });
 
 // ---------- fill tool ----------
-// A real paint-bucket: renders everything currently on the board (minus
-// grid/UI) to an offscreen raster at a fixed working resolution (so it
-// doesn't depend on current pan/zoom), then flood-fills from the clicked
-// pixel. Any stroke — including a line drawn across a shape — blocks the
-// flood, so it naturally splits a shape into separate fillable regions.
-// If the flood ever reaches the edge of that raster, the area wasn't
-// actually enclosed, so nothing is filled and a warning is shown instead.
-const FILL_MAX_RASTER_DIM = 3000;
-const FILL_MARGIN = 150; // world units of padding beyond existing content
+// Fill only ever operates on whatever is already selected: a single shape,
+// or a real saved group (via Ctrl+G) — never the whole board. It renders
+// just that scope's own objects to a small offscreen raster and flood-fills
+// from the clicked pixel within it. A stroke inside the scope (e.g. a line
+// grouped with a rectangle it crosses) still splits it into separate
+// fillable regions; anything outside the scope simply isn't part of the
+// render, so it can never leak into or be confused with unrelated shapes
+// elsewhere on the board. If the flood reaches the edge of that raster,
+// the region wasn't actually enclosed, so nothing is filled.
+const FILL_MAX_RASTER_DIM = 2000;
+const FILL_SCOPE_MARGIN = 40; // world units of padding around the scope's own bounds
+const FILLABLE_TYPES = ['rect', 'ellipse', 'line', 'path'];
 const tintCache = {}; // "id|color" -> tinted canvas, so recoloring a fill doesn't require a full retint every frame
 
 function showToast(msg, isWarning){
@@ -1155,17 +1619,6 @@ function showToast(msg, isWarning){
     el.classList.remove('show');
     setTimeout(() => el.remove(), 300);
   }, 3400);
-}
-
-function contentBoundsForFill(){
-  if(!objects.length) return { minX:-400, minY:-400, maxX:400, maxY:400 };
-  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
-  objects.forEach(o => {
-    const b = boundsOf(o);
-    minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
-    maxX = Math.max(maxX, b.x+b.w); maxY = Math.max(maxY, b.y+b.h);
-  });
-  return { minX, minY, maxX, maxY };
 }
 
 function isNearWhitePixel(data, idx){
@@ -1188,18 +1641,59 @@ function getTintedFillCanvas(o, maskImg){
   return cnv;
 }
 
-function tryFillAt(worldX, worldY){
-  const cb = contentBoundsForFill();
-  const bx = cb.minX - FILL_MARGIN, by = cb.minY - FILL_MARGIN;
-  const bw = (cb.maxX - cb.minX) + FILL_MARGIN*2;
-  const bh = (cb.maxY - cb.minY) + FILL_MARGIN*2;
+function rectsOverlap(a, b){
+  return !(a.x+a.w <= b.x || b.x+b.w <= a.x || a.y+a.h <= b.y || b.y+b.h <= a.y);
+}
 
-  if(worldX < bx || worldX > bx+bw || worldY < by || worldY > by+bh){
-    showToast("That area isn't enclosed, so it can't be filled.", true);
+// Fill's target is whatever the Select tool currently has selected: a
+// single object, or — only if it's a genuine saved group, not just an
+// ad-hoc marquee selection — every member of that group.
+function resolveFillScope(){
+  if(multiSelectedIds.length > 1){
+    const first = objects.find(o => o.id === multiSelectedIds[0]);
+    const gid = first && first.groupId;
+    const isRealGroup = gid && multiSelectedIds.every(id => {
+      const o = objects.find(x => x.id === id);
+      return o && o.groupId === gid;
+    });
+    return isRealGroup ? objects.filter(o => o.groupId === gid) : null;
+  }
+  if(selectedId){
+    const obj = objects.find(o => o.id === selectedId);
+    if(!obj) return null;
+    if(obj.groupId) return objects.filter(o => o.groupId === obj.groupId);
+    return [obj];
+  }
+  return null;
+}
+
+function tryFillAt(worldX, worldY){
+ try{
+  const scopeObjects = resolveFillScope();
+  if(!scopeObjects){
+    showToast('Select a shape or a grouped shape first, then click inside it to fill.', true);
+    return;
+  }
+  if(!scopeObjects.some(o => FILLABLE_TYPES.includes(o.type))){
+    showToast("Fill only works on shapes and lines, not this kind of object.", true);
     return;
   }
 
-  let pxPerUnit = Math.min(FILL_MAX_RASTER_DIM/bw, FILL_MAX_RASTER_DIM/bh, 4);
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  scopeObjects.forEach(o => {
+    const b = boundsOf(o);
+    minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+    maxX = Math.max(maxX, b.x+b.w); maxY = Math.max(maxY, b.y+b.h);
+  });
+  const bx = minX - FILL_SCOPE_MARGIN, by = minY - FILL_SCOPE_MARGIN;
+  const bw = (maxX-minX) + FILL_SCOPE_MARGIN*2, bh = (maxY-minY) + FILL_SCOPE_MARGIN*2;
+
+  if(worldX < bx || worldX > bx+bw || worldY < by || worldY > by+bh){
+    showToast('Click inside the selected shape to fill it.', true);
+    return;
+  }
+
+  let pxPerUnit = Math.min(FILL_MAX_RASTER_DIM/bw, FILL_MAX_RASTER_DIM/bh, 6);
   pxPerUnit = Math.max(pxPerUnit, 0.4);
   const rw = Math.max(1, Math.ceil(bw*pxPerUnit)), rh = Math.max(1, Math.ceil(bh*pxPerUnit));
 
@@ -1212,13 +1706,15 @@ function tryFillAt(worldX, worldY){
   octx.scale(pxPerUnit, pxPerUnit);
 
   const savedCtx = ctx;
-  ctx = octx;
-  getPaintOrder().forEach(o => {
-    if(!isLayerVisible(o.layerId)) return;
-    if(o.type === 'fill' || o.type === 'image') return; // don't let existing fills or reference images block a new fill
-    drawObject(o, false, false);
-  });
-  ctx = savedCtx;
+  try{
+    ctx = octx;
+    scopeObjects.forEach(o => {
+      if(o.type === 'fill' || o.type === 'image') return; // don't let existing fills or reference images block a new fill
+      drawObject(o, false, false);
+    });
+  } finally {
+    ctx = savedCtx; // must always restore, even if a draw call above throws
+  }
 
   const imgData = octx.getImageData(0, 0, rw, rh);
   const data = imgData.data;
@@ -1226,7 +1722,7 @@ function tryFillAt(worldX, worldY){
   const startPx = Math.floor((worldX-bx)*pxPerUnit);
   const startPy = Math.floor((worldY-by)*pxPerUnit);
   if(startPx < 0 || startPx >= rw || startPy < 0 || startPy >= rh){
-    showToast("That area isn't enclosed, so it can't be filled.", true);
+    showToast('Click inside the selected shape to fill it.', true);
     return;
   }
   if(!isNearWhitePixel(data, (startPy*rw+startPx)*4)){
@@ -1290,14 +1786,14 @@ function tryFillAt(worldX, worldY){
   // a region cleanly replaces the old color instead of stacking under it
   objects = objects.filter(o => !(o.type === 'fill' && rectsOverlap(o, fillObj)));
   objects.push(fillObj); // on top of everything — the mask has no pixels where a stroke was, so outlines still show through
-  setTool('select');
-  selectedId = fillObj.id;
-  refreshStylePanel();
+  // deliberately leave the current selection and the Fill tool active, so
+  // filling several regions of the same shape/group in a row needs no reselecting
   pushHistory();
   render();
-}
-function rectsOverlap(a, b){
-  return !(a.x+a.w <= b.x || b.x+b.w <= a.x || a.y+a.h <= b.y || b.y+b.h <= a.y);
+ } catch(err){
+   console.error('Fill failed', err);
+   showToast("Something went wrong while filling — please try again.", true);
+ }
 }
 
 // ---------- grid settings ----------
@@ -1352,6 +1848,7 @@ gridColorInput.addEventListener('input', (e) => {
 // fade hint after a bit
 setTimeout(() => {
   const h = document.getElementById('hint');
+  if(!h){ console.warn('hint element missing when trying to fade it'); return; }
   h.style.transition = 'opacity .6s';
   h.style.opacity = '0';
   setTimeout(()=> h.remove(), 700);

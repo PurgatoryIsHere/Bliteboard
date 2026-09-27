@@ -9,9 +9,11 @@ function load(){
     if(raw){
       const data = JSON.parse(raw);
       objects = data.objects || [];
-      panX = typeof data.panX === 'number' ? data.panX : 0;
-      panY = typeof data.panY === 'number' ? data.panY : 0;
-      scale = typeof data.scale === 'number' ? data.scale : 1;
+      panX = (typeof data.panX === 'number' && isFinite(data.panX)) ? data.panX : 0;
+      panY = (typeof data.panY === 'number' && isFinite(data.panY)) ? data.panY : 0;
+      scale = (typeof data.scale === 'number' && isFinite(data.scale) && data.scale > 0)
+        ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, data.scale))
+        : 1;
       gridStyle = data.gridStyle || 'dots';
       gridColor = data.gridColor || null;
       currentBoardName = data.currentBoardName || 'Untitled board';
@@ -71,6 +73,11 @@ function persistBoardsLibrary(){
 }
 
 // ---------- board file download / upload ----------
+// `downloads` is a Claude-artifact-viewer capability (window.claude.use)
+// and simply doesn't exist when this page is opened as a plain local
+// file or on a normal web server — that's not an error, just a different
+// environment. Either way, a standard Blob+<a download> works everywhere
+// a real browser can run this page, so that's the fallback below.
 let downloadsCap = null;
 (async () => {
   try{
@@ -78,11 +85,6 @@ let downloadsCap = null;
       downloadsCap = await window.claude.use('downloads');
     }
   }catch(e){ downloadsCap = null; }
-  const exportBtn = document.getElementById('exportBoardBtn');
-  if(exportBtn){
-    exportBtn.disabled = !downloadsCap;
-    if(!downloadsCap) exportBtn.title = "Downloading isn't available in this view";
-  }
   if(document.getElementById('boardsPanel').classList.contains('show')) renderBoardsPanel();
 })();
 
@@ -90,11 +92,19 @@ function safeFileName(name){
   return (name || 'board').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'board';
 }
 
+function browserDownload(filename, textData){
+  const blob = new Blob([textData], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function exportBoard(name, data){
-  if(!downloadsCap){
-    alert("Downloading files isn't available in this view.");
-    return;
-  }
   const payload = JSON.stringify({
     app: 'whiteboard',
     formatVersion: 1,
@@ -106,10 +116,20 @@ async function exportBoard(name, data){
     activeLayerId: data.activeLayerId,
     objects: data.objects
   }, null, 2);
+  const filename = safeFileName(name) + '.json';
+
+  if(downloadsCap){
+    try{
+      await downloadsCap.save({ filename, data: payload });
+      return;
+    }catch(err){
+      if(err && err.code === 'declined') return;
+      console.error('Platform download failed, falling back to a plain browser download', err);
+    }
+  }
   try{
-    await downloadsCap.save({ filename: safeFileName(name) + '.json', data: payload });
+    browserDownload(filename, payload);
   }catch(err){
-    if(err && err.code === 'declined') return;
     console.error('Board download failed', err);
     alert("Couldn't download that board — please try again.");
   }
@@ -194,29 +214,32 @@ function makeBoardThumbnail(objs){
   const cnv = document.createElement('canvas');
   cnv.width = size; cnv.height = size;
   const savedGlobalCtx = ctx;
-  ctx = cnv.getContext('2d');
-  ctx.fillStyle = '#f2f0ea';
-  ctx.fillRect(0, 0, size, size);
-  if(objs.length){
-    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
-    objs.forEach(o => {
-      const b = boundsOf(o);
-      minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
-      maxX = Math.max(maxX, b.x+b.w); maxY = Math.max(maxY, b.y+b.h);
-    });
-    const bw = Math.max(maxX-minX, 1), bh = Math.max(maxY-minY, 1);
-    const pad = 5;
-    const availW = size - pad*2, availH = size - pad*2;
-    const s = Math.min(availW/bw, availH/bh);
-    const ox = pad + (availW - bw*s)/2 - minX*s;
-    const oy = pad + (availH - bh*s)/2 - minY*s;
-    ctx.save();
-    ctx.translate(ox, oy);
-    ctx.scale(s, s);
-    objs.forEach(o => drawObject(o, false, false));
-    ctx.restore();
+  try{
+    ctx = cnv.getContext('2d');
+    ctx.fillStyle = '#f2f0ea';
+    ctx.fillRect(0, 0, size, size);
+    if(objs.length){
+      let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+      objs.forEach(o => {
+        const b = boundsOf(o);
+        minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x+b.w); maxY = Math.max(maxY, b.y+b.h);
+      });
+      const bw = Math.max(maxX-minX, 1), bh = Math.max(maxY-minY, 1);
+      const pad = 5;
+      const availW = size - pad*2, availH = size - pad*2;
+      const s = Math.min(availW/bw, availH/bh);
+      const ox = pad + (availW - bw*s)/2 - minX*s;
+      const oy = pad + (availH - bh*s)/2 - minY*s;
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.scale(s, s);
+      objs.forEach(o => drawObject(o, false, false));
+      ctx.restore();
+    }
+  } finally {
+    ctx = savedGlobalCtx; // must always restore, even if drawObject throws
   }
-  ctx = savedGlobalCtx;
   return cnv;
 }
 
@@ -246,9 +269,8 @@ function renderBoardsPanel(){
     actions.className = 'board-actions';
     const dlBtn = document.createElement('button');
     dlBtn.className = 'board-icon-btn';
-    dlBtn.title = downloadsCap ? 'Download this board as a file' : "Downloading isn't available in this view";
+    dlBtn.title = 'Download this board as a file';
     dlBtn.textContent = '⬇';
-    dlBtn.disabled = !downloadsCap;
     dlBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       exportBoard(entry.name, entry.data);

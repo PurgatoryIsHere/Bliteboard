@@ -175,6 +175,12 @@ function renderLayersPanel(){
 }
 
 function deselectIfOnLayer(layerId){
+  if(multiSelectedIds.length){
+    multiSelectedIds = multiSelectedIds.filter(id => {
+      const obj = objects.find(o => o.id === id);
+      return obj && obj.layerId !== layerId;
+    });
+  }
   if(!selectedId) return;
   const obj = objects.find(o => o.id === selectedId);
   if(obj && obj.layerId === layerId){
@@ -183,6 +189,9 @@ function deselectIfOnLayer(layerId){
   }
 }
 function deselectIfMissing(){
+  if(multiSelectedIds.length){
+    multiSelectedIds = multiSelectedIds.filter(id => objects.find(o => o.id === id));
+  }
   if(selectedId && !objects.find(o => o.id === selectedId)){
     selectedId = null;
     refreshStylePanel();

@@ -289,10 +289,11 @@
   .layer-reorder button:disabled{ opacity:0.25; cursor:default; }
 
   .hint{
-    position:fixed; top:14px; right:14px; z-index:5;
+    position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:5;
     background: var(--panel); color: var(--panel-text-dim);
     padding:8px 12px; border-radius:10px; font-size:11.5px; box-shadow: var(--shadow);
-    max-width:220px; line-height:1.5;
+    max-width:280px; line-height:1.5; text-align:center;
+    pointer-events:none; /* never let a lingering hint block clicks on anything beneath it */
   }
 
   .toast{
