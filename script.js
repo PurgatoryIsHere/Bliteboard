@@ -35,10 +35,12 @@ let historyIndex = 0;
 let nextId = 1;
 let gridStyle = 'dots';   // 'dots' | 'lines' | 'none'
 let gridColor = null;     // null = use theme default
+let bgMode = 'light';     // 'light' | 'dark' | 'custom'
+let bgColor = null;       // the custom background color (hex), used when bgMode is 'custom'
 let currentBoardName = 'Untitled board';
 let activeBoardId = null; // set when the open board came from (or was saved to) the library
 
-const PALETTE = ['#232428', '#e5484d', '#f5a623', '#2fb344', '#4a5cf0', '#a855f7'];
+const PALETTE = ['#232428', '#f4f4f5', '#e5484d', '#f5a623', '#2fb344', '#4a5cf0', '#a855f7'];
 let currentColor = PALETTE[0];
 let currentThickness = 1.5;
 let currentLineStyle = 'plain'; // 'plain' | 'arrow'
@@ -1621,6 +1623,42 @@ function showToast(msg, isWarning){
   }, 3400);
 }
 
+// In-app replacement for window.prompt(): Electron doesn't support the native
+// one at all, and this looks consistent everywhere. Resolves to the entered
+// text, or null if cancelled.
+function askText(message, defaultValue){
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML =
+      '<div class="modal-box">' +
+        '<div class="modal-msg"></div>' +
+        '<input type="text" class="modal-input" spellcheck="false">' +
+        '<div class="modal-actions">' +
+          '<button class="modal-btn" data-act="cancel">Cancel</button>' +
+          '<button class="modal-btn primary" data-act="ok">OK</button>' +
+        '</div>' +
+      '</div>';
+    overlay.querySelector('.modal-msg').textContent = message;
+    const input = overlay.querySelector('.modal-input');
+    input.value = defaultValue || '';
+    // clicks inside the dialog must not reach the document-level handlers
+    // that close the popover panels
+    overlay.addEventListener('click', (e) => e.stopPropagation());
+    document.body.appendChild(overlay);
+    setTimeout(() => { input.focus(); input.select(); }, 0);
+    const finish = (value) => { overlay.remove(); resolve(value); };
+    overlay.querySelector('[data-act="ok"]').addEventListener('click', () => finish(input.value));
+    overlay.querySelector('[data-act="cancel"]').addEventListener('click', () => finish(null));
+    overlay.addEventListener('mousedown', (e) => { if(e.target === overlay) finish(null); });
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if(e.key === 'Enter') finish(input.value);
+      else if(e.key === 'Escape') finish(null);
+    });
+  });
+}
+
 function isNearWhitePixel(data, idx){
   return data[idx+3] > 250 && data[idx] > 250 && data[idx+1] > 250 && data[idx+2] > 250;
 }
@@ -1796,6 +1834,81 @@ function tryFillAt(worldX, worldY){
  }
 }
 
+// ---------- background ----------
+const BG_PRESETS = {
+  light: { bg: '#eeece6', dot: '#c9c6bc' },
+  dark:  { bg: '#1c1d21', dot: '#35363c' }
+};
+function hexToRgbArr(hex){
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbArrToHex(a){
+  return '#' + a.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+}
+// Grid dots for a custom background: nudge the background toward black (if it's
+// light) or white (if it's dark) so they stay visible but subtle.
+function dotColorFor(hex){
+  const [r, g, b] = hexToRgbArr(hex);
+  const lum = (0.299*r + 0.587*g + 0.114*b) / 255;
+  const mix = (c) => lum > 0.5 ? c * 0.86 : c + (255 - c) * 0.14;
+  return rgbArrToHex([mix(r), mix(g), mix(b)]);
+}
+function effectiveBackground(){
+  if(bgMode === 'custom' && bgColor) return { bg: bgColor, dot: dotColorFor(bgColor) };
+  return BG_PRESETS[bgMode] || BG_PRESETS.light;
+}
+function applyBackground(){
+  const { bg, dot } = effectiveBackground();
+  const root = document.documentElement;
+  root.style.setProperty('--bg', bg);
+  root.style.setProperty('--dot', dot);
+  root.setAttribute('data-theme', bgMode === 'dark' ? 'dark' : 'light');
+}
+// Used whenever a board's saved data is loaded (autosave, library, file import).
+// Anything missing or malformed falls back to the light preset.
+function setBackgroundFrom(data){
+  const mode = (data && ['light', 'dark', 'custom'].includes(data.bgMode)) ? data.bgMode : 'light';
+  const color = (data && typeof data.bgColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(data.bgColor)) ? data.bgColor : null;
+  bgMode = (mode === 'custom' && !color) ? 'light' : mode;
+  bgColor = color;
+  applyBackground();
+  syncBackgroundUI();
+}
+
+const bgColorInput = document.getElementById('bgColorInput');
+function syncBackgroundUI(){
+  document.querySelectorAll('#bgModeToggle .seg-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.value === bgMode);
+  });
+  bgColorInput.value = effectiveBackground().bg;
+}
+document.querySelectorAll('#bgModeToggle .seg-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const mode = btn.dataset.value;
+    // first time on Custom: start from whatever is showing now, so nothing jumps
+    if(mode === 'custom' && !bgColor) bgColor = effectiveBackground().bg;
+    bgMode = mode;
+    applyBackground();
+    syncBackgroundUI();
+    syncGridUI();
+    save();
+    render();
+  });
+});
+bgColorInput.addEventListener('input', (e) => {
+  // picking any color switches to Custom automatically
+  bgColor = e.target.value;
+  bgMode = 'custom';
+  applyBackground();
+  document.querySelectorAll('#bgModeToggle .seg-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.value === 'custom');
+  });
+  syncGridUI();
+  save();
+  render();
+});
+
 // ---------- grid settings ----------
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsPanel = document.getElementById('settingsPanel');
@@ -1855,7 +1968,8 @@ setTimeout(() => {
 }, 6000);
 
 // ---------- init ----------
-load();
+applyBackground();   // default (light) in case there's no saved board yet
+load();              // restores a saved board's background, if it has one
 loadShapes();
 loadBoardsLibrary();
 boardNameInput.value = currentBoardName;
@@ -1866,3 +1980,4 @@ setTool('select');
 updateZoomLabel();
 updateHistoryButtons();
 syncGridUI();
+syncBackgroundUI();

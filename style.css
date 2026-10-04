@@ -16,16 +16,9 @@
     --danger: #e5484d;
     --shadow: 0 8px 24px rgba(0,0,0,0.28);
   }
-  :root:not([data-theme="light"]){
-    @media (prefers-color-scheme: dark){
-      --bg: #1c1d21;
-      --dot: #35363c;
-    }
-  }
-  :root[data-theme="dark"]{
-    --bg: #1c1d21;
-    --dot: #35363c;
-  }
+  /* --bg and --dot are set by the app itself (Settings -> Background), so the
+     board no longer changes with the computer's light/dark mode. These two are
+     just the first-paint defaults before that runs. */
 
   *{ box-sizing: border-box; }
   html, body{
@@ -312,3 +305,28 @@
     outline:none; font-family:inherit; background:transparent; padding:4px 6px;
     border-radius:4px;
   }
+
+  /* in-app text prompt dialog */
+  .modal-overlay{
+    position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.35);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .modal-box{
+    background: var(--panel); color: var(--panel-text); border-radius:14px;
+    padding:18px; width:320px; max-width:90vw; box-shadow: var(--shadow);
+    display:flex; flex-direction:column; gap:12px; font-size:13px;
+  }
+  .modal-msg{ font-weight:600; }
+  .modal-input{
+    background:#2e2f35; color: var(--panel-text); border:1px solid var(--border);
+    border-radius:8px; padding:9px 10px; font:inherit; outline:none;
+    -webkit-user-select:text; user-select:text;
+  }
+  .modal-input:focus{ border-color: var(--accent); }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; }
+  .modal-btn{
+    border:none; border-radius:8px; padding:8px 14px; font-weight:600; font-size:12px;
+    cursor:pointer; background:#2e2f35; color: var(--panel-text);
+  }
+  .modal-btn:hover{ background: var(--panel-hover); }
+  .modal-btn.primary{ background: var(--accent); color:#fff; }

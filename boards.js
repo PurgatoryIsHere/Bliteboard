@@ -1,6 +1,6 @@
 function save(){
   try{
-    localStorage.setItem('miroclone-board-v1', JSON.stringify({objects, panX, panY, scale, gridStyle, gridColor, currentBoardName, activeBoardId, layers, activeLayerId}));
+    localStorage.setItem('miroclone-board-v1', JSON.stringify({objects, panX, panY, scale, gridStyle, gridColor, bgMode, bgColor, currentBoardName, activeBoardId, layers, activeLayerId}));
   }catch(e){ /* storage unavailable, fail silently */ }
 }
 function load(){
@@ -16,6 +16,7 @@ function load(){
         : 1;
       gridStyle = data.gridStyle || 'dots';
       gridColor = data.gridColor || null;
+      setBackgroundFrom(data);
       currentBoardName = data.currentBoardName || 'Untitled board';
       activeBoardId = data.activeBoardId || null;
       layers = (Array.isArray(data.layers) && data.layers.length) ? data.layers : [{ id:'layer-1', name:'Layer 1', visible:true, locked:false }];
@@ -112,6 +113,8 @@ async function exportBoard(name, data){
     exportedAt: new Date().toISOString(),
     gridStyle: data.gridStyle,
     gridColor: data.gridColor,
+    bgMode: data.bgMode,
+    bgColor: data.bgColor,
     layers: data.layers,
     activeLayerId: data.activeLayerId,
     objects: data.objects
@@ -136,7 +139,7 @@ async function exportBoard(name, data){
 }
 
 document.getElementById('exportBoardBtn').addEventListener('click', () => {
-  exportBoard(currentBoardName, { objects, gridStyle, gridColor, layers, activeLayerId });
+  exportBoard(currentBoardName, { objects, gridStyle, gridColor, bgMode, bgColor, layers, activeLayerId });
 });
 
 document.getElementById('importBoardBtn').addEventListener('click', () => {
@@ -176,6 +179,7 @@ document.getElementById('importBoardFile').addEventListener('change', (e) => {
     objects = importedObjects;
     gridStyle = parsed.gridStyle || 'dots';
     gridColor = parsed.gridColor || null;
+    setBackgroundFrom(parsed);
     layers = (Array.isArray(parsed.layers) && parsed.layers.length) ? parsed.layers : [{ id:'layer-1', name:'Layer 1', visible:true, locked:false }];
     activeLayerId = parsed.activeLayerId || layers[layers.length-1].id;
     nextLayerNum = layers.length + 1;
@@ -280,9 +284,9 @@ function renderBoardsPanel(){
     renameBtn.className = 'board-icon-btn';
     renameBtn.title = 'Rename';
     renameBtn.textContent = '✎';
-    renameBtn.addEventListener('click', (ev) => {
+    renameBtn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
-      const newName = prompt('Rename board', entry.name);
+      const newName = await askText('Rename board', entry.name);
       if(newName && newName.trim()){
         entry.name = newName.trim();
         persistBoardsLibrary();
@@ -314,6 +318,7 @@ function openSavedBoard(entry){
   objects = JSON.parse(JSON.stringify(entry.data.objects || []));
   gridStyle = entry.data.gridStyle || 'dots';
   gridColor = entry.data.gridColor || null;
+  setBackgroundFrom(entry.data);
   layers = (Array.isArray(entry.data.layers) && entry.data.layers.length) ? JSON.parse(JSON.stringify(entry.data.layers)) : [{ id:'layer-1', name:'Layer 1', visible:true, locked:false }];
   activeLayerId = entry.data.activeLayerId || layers[layers.length-1].id;
   nextLayerNum = layers.length + 1;
@@ -361,11 +366,11 @@ document.addEventListener('click', (e) => {
   }
 });
 
-document.getElementById('saveBoardBtn').addEventListener('click', () => {
-  const name = prompt('Name this board:', currentBoardName || 'My board');
+document.getElementById('saveBoardBtn').addEventListener('click', async () => {
+  const name = await askText('Name this board:', currentBoardName || 'My board');
   if(!name || !name.trim()) return;
   const trimmed = name.trim();
-  const data = { objects: JSON.parse(JSON.stringify(objects)), gridStyle, gridColor, layers: JSON.parse(JSON.stringify(layers)), activeLayerId };
+  const data = { objects: JSON.parse(JSON.stringify(objects)), gridStyle, gridColor, bgMode, bgColor, layers: JSON.parse(JSON.stringify(layers)), activeLayerId };
   const existing = savedBoards.find(b => b.name === trimmed);
   if(existing){
     if(!confirm('A board named "' + trimmed + '" already exists. Overwrite it?')) return;
