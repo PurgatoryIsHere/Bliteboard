@@ -89,6 +89,9 @@
     background: var(--panel); color: var(--panel-text);
     padding:9px 16px; border-radius:12px; box-shadow: var(--shadow);
     font-size:12px;
+    /* wrap onto a second row rather than running under the top-right buttons */
+    flex-wrap:wrap; justify-content:center; row-gap:8px;
+    max-width:calc(100vw - 460px);
   }
   .style-panel.show{ display:flex; }
   .style-row{ display:flex; align-items:center; gap:8px; }

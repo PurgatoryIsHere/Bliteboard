@@ -44,6 +44,7 @@ const PALETTE = ['#232428', '#f4f4f5', '#e5484d', '#f5a623', '#2fb344', '#4a5cf0
 let currentColor = PALETTE[0];
 let currentThickness = 1.5;
 let currentLineStyle = 'plain'; // 'plain' | 'arrow'
+let currentDash = 'solid';      // 'solid' | 'dashed' | 'dotted' (lines, outlines, drawings)
 let currentRadius = 0; // corner radius for new rectangles
 let currentFill = null;        // interior color for rectangles/ellipses (null = no fill)
 let currentFillOpacity = 0.6;  // interior transparency (1 = solid)
@@ -122,7 +123,7 @@ function setDisplay(id, value){
 function refreshStylePanel(){
   const panel = bySelector('stylePanel');
   const obj = (tool === 'select') ? objects.find(o => o.id === selectedId) : null;
-  let showColor, showThickness, showLineStyle, showRadius, showFill;
+  let showColor, showThickness, showLineStyle, showRadius, showFill, showDash;
   const showImageControls = !!(obj && obj.type === 'image');
   if(obj){
     showColor = ('color' in obj) || ('bg' in obj);
@@ -130,6 +131,8 @@ function refreshStylePanel(){
     showLineStyle = (obj.type === 'line');
     showRadius = (obj.type === 'rect');
     showFill = (obj.type === 'rect' || obj.type === 'ellipse');
+    showDash = ['line','rect','ellipse','path'].includes(obj.type);
+    if(showDash) currentDash = obj.dash || 'solid';
     if(showFill){ currentFill = obj.fill || null; currentFillOpacity = typeof obj.fillOpacity === 'number' ? obj.fillOpacity : 0.6; }
     if('color' in obj) currentColor = obj.color;
     else if('bg' in obj) currentColor = obj.bg;
@@ -155,6 +158,7 @@ function refreshStylePanel(){
     showLineStyle = (tool === 'line');
     showRadius = (tool === 'rect');
     showFill = (tool === 'rect' || tool === 'ellipse');
+    showDash = ['pen','rect','ellipse','line'].includes(tool);
   }
   if(panel) panel.classList.toggle('show', showColor || showThickness || showImageControls);
   setDisplay('colorRow', showColor ? 'flex' : 'none');
@@ -162,6 +166,8 @@ function refreshStylePanel(){
   setDisplay('lineStyleRow', showLineStyle ? 'flex' : 'none');
   setDisplay('radiusRow', showRadius ? 'flex' : 'none');
   setDisplay('fillRow', showFill ? 'flex' : 'none');
+  setDisplay('dashRow', showDash ? 'flex' : 'none');
+  document.querySelectorAll('#dashToggle .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.value === currentDash));
   if(showFill){
     const fc = document.getElementById('fillColorInput');
     if(fc) fc.value = currentFill || fc.value;
@@ -315,6 +321,23 @@ document.querySelectorAll('#lineStyleToggle .seg-btn').forEach(btn => {
   });
 });
 
+document.querySelectorAll('#dashToggle .seg-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentDash = btn.dataset.value;
+    document.querySelectorAll('#dashToggle .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+    if(selectedId){ applyStyleToSelection(); pushHistory(); }
+  });
+});
+
+// Dashed / dotted strokes: the pattern scales with line thickness, and round
+// caps turn the dotted pattern's zero-length dashes into actual round dots.
+function applyDash(o){
+  const w = o.width || 1;
+  if(o.dash === 'dotted') ctx.setLineDash([0.01, Math.max(4, w * 2.2)]);
+  else if(o.dash === 'dashed') ctx.setLineDash([Math.max(8, w * 4.5), Math.max(6, w * 3)]);
+  else ctx.setLineDash([]);
+}
+
 function applyStyleToSelection(){
   const obj = objects.find(o => o.id === selectedId);
   if(!obj) return;
@@ -322,6 +345,7 @@ function applyStyleToSelection(){
   else if('bg' in obj) obj.bg = currentColor;
   if('width' in obj) obj.width = currentThickness;
   if(obj.type === 'line') obj.arrow = (currentLineStyle === 'arrow');
+  if(['line','rect','ellipse','path'].includes(obj.type)) obj.dash = currentDash;
   if(obj.type === 'rect') obj.radius = currentRadius;
   if(obj.type === 'rect' || obj.type === 'ellipse'){
     obj.fill = currentFill;
@@ -764,7 +788,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
   if(tool === 'pen'){
     isDrawing = true;
-    currentPath = { id: idOf(), type:'path', color: currentColor, width: currentThickness, points: [{x:w.x,y:w.y}], layerId: activeLayerId };
+    currentPath = { id: idOf(), type:'path', color: currentColor, width: currentThickness, dash: currentDash, points: [{x:w.x,y:w.y}], layerId: activeLayerId };
     objects.push(currentPath);
     return;
   }
@@ -785,7 +809,7 @@ canvas.addEventListener('pointerdown', (e) => {
     shapeStart = w;
     previewShape = { id: null, type: tool, color: currentColor, width: currentThickness,
       x: w.x, y: w.y, w: 0, h: 0, layerId: activeLayerId, radius: currentRadius,
-      fill: currentFill, fillOpacity: currentFillOpacity };
+      fill: currentFill, fillOpacity: currentFillOpacity, dash: currentDash };
     return;
   }
 
@@ -793,7 +817,7 @@ canvas.addEventListener('pointerdown', (e) => {
     isDrawing = true;
     shapeStart = w;
     previewShape = { id: null, type: 'line', color: currentColor, width: currentThickness,
-      points: [{x:w.x, y:w.y}, {x:w.x, y:w.y}], arrow: currentLineStyle === 'arrow', layerId: activeLayerId };
+      points: [{x:w.x, y:w.y}, {x:w.x, y:w.y}], arrow: currentLineStyle === 'arrow', dash: currentDash, layerId: activeLayerId };
     return;
   }
 
@@ -826,6 +850,7 @@ canvas.addEventListener('pointermove', (e) => {
   const rect = canvas.getBoundingClientRect();
   const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
   const w = screenToWorld(sx, sy);
+  cursorScreen = { x: sx, y: sy }; // remembered so Ctrl+V can paste under the cursor
 
   if(isPanning){
     panX += (sx - lastPointer.x);
@@ -994,6 +1019,8 @@ function moveObject(obj, dx, dy){
   }
 }
 
+let cursorScreen = null; // last known pointer position over the board (screen px)
+
 function copySelection(){
   let ids = [];
   if(multiSelectedIds.length > 1) ids = multiSelectedIds;
@@ -1009,8 +1036,8 @@ function copySelection(){
 function pasteClipboard(){
   if(!clipboardObjects.length) return;
   pasteOffsetCount++;
-  const offset = 24 * pasteOffsetCount;
   const newIds = [];
+  const clones = [];
   const groupIdMap = {}; // pasted copies form their own group, separate from the source
   clipboardObjects.forEach(src => {
     const clone = JSON.parse(JSON.stringify(src));
@@ -1020,9 +1047,28 @@ function pasteClipboard(){
       if(!groupIdMap[clone.groupId]) groupIdMap[clone.groupId] = newGroupId();
       clone.groupId = groupIdMap[clone.groupId];
     }
-    moveObject(clone, offset, offset);
-    objects.push(clone);
-    newIds.push(clone.id);
+    clones.push(clone);
+  });
+  // center the pasted copies on the cursor (falls back to a small diagonal
+  // offset if the pointer hasn't been over the board yet)
+  let dx, dy;
+  if(cursorScreen){
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    clones.forEach(c => {
+      const b = worldBoundsOf(c);
+      minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x+b.w); maxY = Math.max(maxY, b.y+b.h);
+    });
+    const target = screenToWorld(cursorScreen.x, cursorScreen.y);
+    dx = target.x - (minX+maxX)/2;
+    dy = target.y - (minY+maxY)/2;
+  } else {
+    dx = dy = 24 * pasteOffsetCount;
+  }
+  clones.forEach(c => {
+    moveObject(c, dx, dy);
+    objects.push(c);
+    newIds.push(c.id);
   });
   setTool('select');
   if(newIds.length === 1){
@@ -1399,6 +1445,7 @@ function drawObject(o, selected, isPreview){
   } else if(o.type === 'path'){
     if(o.points.length < 2) return;
     ctx.strokeStyle = o.color; ctx.lineWidth = o.width;
+    applyDash(o);
     ctx.beginPath();
     const pts = o.points;
     ctx.moveTo(pts[0].x, pts[0].y);
@@ -1414,6 +1461,7 @@ function drawObject(o, selected, isPreview){
       ctx.lineTo(last.x, last.y);
     }
     ctx.stroke();
+    ctx.setLineDash([]);
   } else if(o.type === 'rect'){
     ctx.strokeStyle = o.color; ctx.lineWidth = o.width;
     const r = Math.min(o.radius || 0, Math.abs(o.w)/2, Math.abs(o.h)/2);
@@ -1425,12 +1473,14 @@ function drawObject(o, selected, isPreview){
       else ctx.fillRect(o.x, o.y, o.w, o.h);
       ctx.restore();
     }
+    applyDash(o);
     if(r > 0){
       roundRect(o.x, o.y, o.w, o.h, r);
       ctx.stroke();
     } else {
       ctx.strokeRect(o.x, o.y, o.w, o.h);
     }
+    ctx.setLineDash([]);
     if(o.label && o.id !== editingObjectId) drawShapeLabel(o, o.x+o.w/2, o.y+o.h/2, Math.max(10, o.w-16));
   } else if(o.type === 'ellipse'){
     ctx.strokeStyle = o.color; ctx.lineWidth = o.width;
@@ -1443,10 +1493,13 @@ function drawObject(o, selected, isPreview){
       ctx.fill();
       ctx.restore();
     }
+    applyDash(o);
     ctx.stroke();
+    ctx.setLineDash([]);
     if(o.label && o.id !== editingObjectId) drawShapeLabel(o, o.x+o.w/2, o.y+o.h/2, Math.max(10, Math.abs(o.w)*0.8));
   } else if(o.type === 'line'){
     ctx.strokeStyle = o.color; ctx.lineWidth = o.width;
+    applyDash(o);
     ctx.beginPath();
     const pts = o.points;
     ctx.moveTo(pts[0].x, pts[0].y);
@@ -1462,6 +1515,7 @@ function drawObject(o, selected, isPreview){
     }
     if(pts.length > 1) ctx.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
     ctx.stroke();
+    ctx.setLineDash([]); // the arrowhead is always solid
     if(o.arrow){
       const p1 = pts[pts.length-2], p2 = pts[pts.length-1];
       const angle = Math.atan2(p2.y-p1.y, p2.x-p1.x);
