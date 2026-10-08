@@ -1,4 +1,5 @@
 function save(){
+  updateTitle();
   try{
     localStorage.setItem('miroclone-board-v1', JSON.stringify({objects, panX, panY, scale, gridStyle, gridColor, bgMode, bgColor, currentBoardName, activeBoardId, layers, activeLayerId}));
   }catch(e){ /* storage unavailable, fail silently */ }
@@ -36,9 +37,13 @@ function load(){
   }catch(e){ objects = []; }
 }
 // ---------- board name ----------
+function updateTitle(){
+  document.title = 'Bliteboard - ' + ((typeof currentBoardName === 'string' && currentBoardName.trim()) || 'Untitled board');
+}
 const boardNameInput = document.getElementById('boardNameInput');
 boardNameInput.addEventListener('input', () => {
   currentBoardName = boardNameInput.value;
+  updateTitle();
 });
 boardNameInput.addEventListener('blur', () => {
   if(!boardNameInput.value.trim()){

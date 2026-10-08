@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Board</title>
+<title>Bliteboard - Untitled board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -149,6 +149,12 @@
   <div class="style-row" id="radiusRow">
     <label>Corners</label>
     <input type="range" id="radiusSlider" min="0" max="60" step="1" value="0">
+  </div>
+  <div class="style-row" id="fillRow">
+    <label>Fill</label>
+    <input type="color" id="fillColorInput" value="#4a5cf0" title="Color inside the shape">
+    <button class="seg-btn" id="fillNoneBtn" title="Remove the fill" style="padding:6px 10px;">None</button>
+    <input type="range" id="fillOpacitySlider" min="0.05" max="1" step="0.05" value="0.6" title="Fill transparency">
   </div>
   <div class="style-row" id="opacityRow">
     <label>Opacity</label>

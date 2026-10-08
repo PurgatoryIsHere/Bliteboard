@@ -45,6 +45,8 @@ let currentColor = PALETTE[0];
 let currentThickness = 1.5;
 let currentLineStyle = 'plain'; // 'plain' | 'arrow'
 let currentRadius = 0; // corner radius for new rectangles
+let currentFill = null;        // interior color for rectangles/ellipses (null = no fill)
+let currentFillOpacity = 0.6;  // interior transparency (1 = solid)
 
 function snapshot(){
   return JSON.stringify(objects);
@@ -120,13 +122,15 @@ function setDisplay(id, value){
 function refreshStylePanel(){
   const panel = bySelector('stylePanel');
   const obj = (tool === 'select') ? objects.find(o => o.id === selectedId) : null;
-  let showColor, showThickness, showLineStyle, showRadius;
+  let showColor, showThickness, showLineStyle, showRadius, showFill;
   const showImageControls = !!(obj && obj.type === 'image');
   if(obj){
     showColor = ('color' in obj) || ('bg' in obj);
     showThickness = ('width' in obj);
     showLineStyle = (obj.type === 'line');
     showRadius = (obj.type === 'rect');
+    showFill = (obj.type === 'rect' || obj.type === 'ellipse');
+    if(showFill){ currentFill = obj.fill || null; currentFillOpacity = typeof obj.fillOpacity === 'number' ? obj.fillOpacity : 0.6; }
     if('color' in obj) currentColor = obj.color;
     else if('bg' in obj) currentColor = obj.bg;
     if('width' in obj){ currentThickness = obj.width; thicknessSlider.value = obj.width; thicknessInput.value = obj.width; }
@@ -150,12 +154,22 @@ function refreshStylePanel(){
     showThickness = ['pen','rect','ellipse','line'].includes(tool);
     showLineStyle = (tool === 'line');
     showRadius = (tool === 'rect');
+    showFill = (tool === 'rect' || tool === 'ellipse');
   }
   if(panel) panel.classList.toggle('show', showColor || showThickness || showImageControls);
   setDisplay('colorRow', showColor ? 'flex' : 'none');
   setDisplay('thicknessRow', showThickness ? 'flex' : 'none');
   setDisplay('lineStyleRow', showLineStyle ? 'flex' : 'none');
   setDisplay('radiusRow', showRadius ? 'flex' : 'none');
+  setDisplay('fillRow', showFill ? 'flex' : 'none');
+  if(showFill){
+    const fc = document.getElementById('fillColorInput');
+    if(fc) fc.value = currentFill || fc.value;
+    const fo = document.getElementById('fillOpacitySlider');
+    if(fo) fo.value = currentFillOpacity;
+    const fn = document.getElementById('fillNoneBtn');
+    if(fn) fn.classList.toggle('active', !currentFill);
+  }
   setDisplay('opacityRow', showImageControls ? 'flex' : 'none');
   setDisplay('lockRow', showImageControls ? 'flex' : 'none');
   document.querySelectorAll('#lineStyleToggle .seg-btn').forEach(b => {
@@ -241,6 +255,36 @@ radiusSlider.addEventListener('change', () => {
   if(selectedId){ pushHistory(); }
 });
 
+// shape fill (interior color + transparency)
+const fillColorInput = document.getElementById('fillColorInput');
+const fillNoneBtn = document.getElementById('fillNoneBtn');
+const fillOpacitySlider = document.getElementById('fillOpacitySlider');
+function applyFillToSelection(){
+  const obj = objects.find(o => o.id === selectedId);
+  if(obj && (obj.type === 'rect' || obj.type === 'ellipse')){
+    obj.fill = currentFill;
+    obj.fillOpacity = currentFillOpacity;
+    render();
+  }
+}
+fillColorInput.addEventListener('input', (e) => {
+  currentFill = e.target.value;
+  fillNoneBtn.classList.remove('active');
+  applyFillToSelection();
+});
+fillColorInput.addEventListener('change', () => { if(selectedId) pushHistory(); });
+fillNoneBtn.addEventListener('click', () => {
+  currentFill = null;
+  fillNoneBtn.classList.add('active');
+  applyFillToSelection();
+  if(selectedId) pushHistory();
+});
+fillOpacitySlider.addEventListener('input', (e) => {
+  currentFillOpacity = parseFloat(e.target.value);
+  applyFillToSelection();
+});
+fillOpacitySlider.addEventListener('change', () => { if(selectedId) pushHistory(); });
+
 const opacitySlider = document.getElementById('opacitySlider');
 opacitySlider.addEventListener('input', (e) => {
   const obj = objects.find(o => o.id === selectedId);
@@ -279,6 +323,10 @@ function applyStyleToSelection(){
   if('width' in obj) obj.width = currentThickness;
   if(obj.type === 'line') obj.arrow = (currentLineStyle === 'arrow');
   if(obj.type === 'rect') obj.radius = currentRadius;
+  if(obj.type === 'rect' || obj.type === 'ellipse'){
+    obj.fill = currentFill;
+    obj.fillOpacity = currentFillOpacity;
+  }
   render();
 }
 
@@ -648,6 +696,27 @@ canvas.addEventListener('pointerdown', (e) => {
     }
     const hit = hitTest(w.x, w.y);
 
+    if(e.ctrlKey || e.metaKey){
+      // Ctrl/Cmd+click: add to (or remove from) the current selection
+      if(!hit) return; // keep the selection as-is when ctrl-clicking empty space
+      const current = multiSelectedIds.length ? multiSelectedIds.slice() : (selectedId ? [selectedId] : []);
+      const hitIds = hit.groupId ? objects.filter(o => o.groupId === hit.groupId).map(o => o.id) : [hit.id];
+      const alreadyIn = hitIds.every(id => current.includes(id));
+      const next = alreadyIn
+        ? current.filter(id => !hitIds.includes(id))
+        : current.concat(hitIds.filter(id => !current.includes(id)));
+      if(next.length > 1){
+        selectedId = null;
+        multiSelectedIds = next;
+      } else {
+        multiSelectedIds = [];
+        selectedId = next.length === 1 ? next[0] : null;
+      }
+      refreshStylePanel();
+      render();
+      return;
+    }
+
     if(hit && multiSelectedIds.length > 1 && multiSelectedIds.includes(hit.id)){
       // clicked on a member of an existing multi-selection: drag the whole group
       isDragging = true;
@@ -715,7 +784,8 @@ canvas.addEventListener('pointerdown', (e) => {
     isDrawing = true;
     shapeStart = w;
     previewShape = { id: null, type: tool, color: currentColor, width: currentThickness,
-      x: w.x, y: w.y, w: 0, h: 0, layerId: activeLayerId, radius: currentRadius };
+      x: w.x, y: w.y, w: 0, h: 0, layerId: activeLayerId, radius: currentRadius,
+      fill: currentFill, fillOpacity: currentFillOpacity };
     return;
   }
 
@@ -802,7 +872,17 @@ canvas.addEventListener('pointermove', (e) => {
   if(isResizing && resizeObj){
     // x/y/points are always stored unrotated, so the mouse point needs to
     // be converted into that same local space before any of this math
-    const lw = resizeObj.rotation ? toLocal(w.x, w.y, resizeObj) : w;
+    let lw = resizeObj.rotation ? toLocal(w.x, w.y, resizeObj) : w;
+    if(e.shiftKey && resizeStartBounds && resizeObj.type !== 'line' && resizeObj.type !== 'text'){
+      // hold Shift: keep the original proportions while dragging a corner
+      const w0 = Math.max(resizeStartBounds.w, 0.001), h0 = Math.max(resizeStartBounds.h, 0.001);
+      const dx = lw.x - resizeAnchor.x, dy = lw.y - resizeAnchor.y;
+      const k = Math.max(Math.abs(dx) / w0, Math.abs(dy) / h0);
+      lw = {
+        x: resizeAnchor.x + (dx < 0 ? -1 : 1) * k * w0,
+        y: resizeAnchor.y + (dy < 0 ? -1 : 1) * k * h0,
+      };
+    }
     if(['rect','ellipse','sticky','image','fill'].includes(resizeObj.type)){
       const nx = Math.min(resizeAnchor.x, lw.x);
       const ny = Math.min(resizeAnchor.y, lw.y);
@@ -1337,6 +1417,14 @@ function drawObject(o, selected, isPreview){
   } else if(o.type === 'rect'){
     ctx.strokeStyle = o.color; ctx.lineWidth = o.width;
     const r = Math.min(o.radius || 0, Math.abs(o.w)/2, Math.abs(o.h)/2);
+    if(o.fill){
+      ctx.save();
+      ctx.globalAlpha = typeof o.fillOpacity === 'number' ? o.fillOpacity : 0.6;
+      ctx.fillStyle = o.fill;
+      if(r > 0){ roundRect(o.x, o.y, o.w, o.h, r); ctx.fill(); }
+      else ctx.fillRect(o.x, o.y, o.w, o.h);
+      ctx.restore();
+    }
     if(r > 0){
       roundRect(o.x, o.y, o.w, o.h, r);
       ctx.stroke();
@@ -1348,6 +1436,13 @@ function drawObject(o, selected, isPreview){
     ctx.strokeStyle = o.color; ctx.lineWidth = o.width;
     ctx.beginPath();
     ctx.ellipse(o.x+o.w/2, o.y+o.h/2, Math.abs(o.w/2), Math.abs(o.h/2), 0, 0, Math.PI*2);
+    if(o.fill){
+      ctx.save();
+      ctx.globalAlpha = typeof o.fillOpacity === 'number' ? o.fillOpacity : 0.6;
+      ctx.fillStyle = o.fill;
+      ctx.fill();
+      ctx.restore();
+    }
     ctx.stroke();
     if(o.label && o.id !== editingObjectId) drawShapeLabel(o, o.x+o.w/2, o.y+o.h/2, Math.max(10, Math.abs(o.w)*0.8));
   } else if(o.type === 'line'){
@@ -1717,6 +1812,27 @@ function tryFillAt(worldX, worldY){
     return;
   }
 
+  // A lone rectangle/ellipse stores its fill as part of the shape itself
+  // (it then moves, resizes, rotates and copies with it).
+  if(scopeObjects.length === 1 && (scopeObjects[0].type === 'rect' || scopeObjects[0].type === 'ellipse')){
+    const so = scopeObjects[0];
+    const p = so.rotation ? toLocal(worldX, worldY, so) : {x:worldX, y:worldY};
+    let inside;
+    if(so.type === 'rect'){
+      inside = p.x >= so.x && p.x <= so.x+so.w && p.y >= so.y && p.y <= so.y+so.h;
+    } else {
+      const rx = Math.abs(so.w/2) || 1, ry = Math.abs(so.h/2) || 1;
+      inside = ((p.x-(so.x+so.w/2))**2)/(rx*rx) + ((p.y-(so.y+so.h/2))**2)/(ry*ry) <= 1;
+    }
+    if(!inside){ showToast('Click inside the selected shape to fill it.', true); return; }
+    so.fill = currentColor;
+    so.fillOpacity = currentFillOpacity;
+    pushHistory();
+    refreshStylePanel();
+    render();
+    return;
+  }
+
   let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
   scopeObjects.forEach(o => {
     const b = boundsOf(o);
@@ -1820,6 +1936,10 @@ function tryFillAt(worldX, worldY){
     color: currentColor,
     layerId: activeLayerId
   };
+  // make the fill part of the shape: same group as what it fills
+  let fillGid = scopeObjects.find(o => o.groupId)?.groupId;
+  if(!fillGid){ fillGid = newGroupId(); scopeObjects.forEach(o => { o.groupId = fillGid; }); }
+  fillObj.groupId = fillGid;
   // remove any earlier fill occupying (roughly) the same area, so re-filling
   // a region cleanly replaces the old color instead of stacking under it
   objects = objects.filter(o => !(o.type === 'fill' && rectsOverlap(o, fillObj)));
@@ -1973,6 +2093,7 @@ load();              // restores a saved board's background, if it has one
 loadShapes();
 loadBoardsLibrary();
 boardNameInput.value = currentBoardName;
+updateTitle();
 history = [snapshot()];
 historyIndex = 0;
 resize();

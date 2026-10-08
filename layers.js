@@ -98,9 +98,9 @@ function renderLayersPanel(){
     nameEl.className = 'layer-name';
     nameEl.textContent = layer.name;
     nameEl.title = 'Double-click to rename';
-    nameEl.addEventListener('dblclick', (ev) => {
+    nameEl.addEventListener('dblclick', async (ev) => {
       ev.stopPropagation();
-      const newName = prompt('Rename layer', layer.name);
+      const newName = await askText('Rename layer', layer.name);
       if(newName && newName.trim()){
         layer.name = newName.trim();
         save();
