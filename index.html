@@ -128,48 +128,76 @@
 <input type="file" id="imageFileInput" accept="image/*" hidden>
 
 <div class="style-panel" id="stylePanel">
-  <div class="style-row" id="colorRow">
-    <label>Color</label>
-    <div class="swatches" id="swatches"></div>
-    <input type="color" id="customColor" value="#232428">
-  </div>
-  <div class="style-row" id="thicknessRow">
-    <label>Thickness</label>
-    <input type="range" id="thicknessSlider" min="0.5" max="40" step="0.5" value="1.5">
-    <input type="number" id="thicknessInput" min="0.5" max="40" step="0.5" value="1.5">
-    <div class="thickness-preview" id="thicknessPreview"><div class="dot"></div></div>
-  </div>
-  <div class="style-row" id="lineStyleRow">
-    <label>Style</label>
-    <div class="segmented" id="lineStyleToggle">
-      <button class="seg-btn" data-value="plain">Line</button>
-      <button class="seg-btn" data-value="arrow">Arrow</button>
+  <div class="panel-head" id="panelTitle">Properties</div>
+
+  <!-- Each .panel-section hides itself automatically when none of its rows apply.
+       To add a new control: put a .style-row (give it an id) inside the right
+       section, then show/hide it with setDisplay('yourRowId', ...) in refreshStylePanel(). -->
+  <div class="panel-section" data-section="appearance">
+    <div class="section-label">Appearance</div>
+    <div class="style-row" id="colorRow">
+      <label>Color</label>
+      <div class="swatches" id="swatches"></div>
+      <input type="color" id="customColor" value="#232428">
+    </div>
+    <div class="style-row" id="thicknessRow">
+      <label>Thickness</label>
+      <input type="range" id="thicknessSlider" min="0.5" max="40" step="0.5" value="1.5">
+      <input type="number" id="thicknessInput" min="0.5" max="40" step="0.5" value="1.5">
+      <div class="thickness-preview" id="thicknessPreview"><div class="dot"></div></div>
     </div>
   </div>
-  <div class="style-row" id="dashRow">
-    <label>Pattern</label>
-    <div class="segmented" id="dashToggle">
-      <button class="seg-btn" data-value="solid">Solid</button>
-      <button class="seg-btn" data-value="dashed">Dashed</button>
-      <button class="seg-btn" data-value="dotted">Dotted</button>
+
+  <div class="panel-section" data-section="stroke">
+    <div class="section-label">Line &amp; outline</div>
+    <div class="style-row" id="lineStyleRow">
+      <label>Ends</label>
+      <div class="segmented" id="lineStyleToggle">
+        <button class="seg-btn" data-value="plain">Line</button>
+        <button class="seg-btn" data-value="arrow">Arrow</button>
+      </div>
+    </div>
+    <div class="style-row" id="dashRow">
+      <label>Pattern</label>
+      <div class="segmented" id="dashToggle">
+        <button class="seg-btn" data-value="solid">Solid</button>
+        <button class="seg-btn" data-value="dashed">Dashed</button>
+        <button class="seg-btn" data-value="dotted">Dotted</button>
+      </div>
+    </div>
+    <div class="style-row" id="dashSizeRow">
+      <label>Dash size</label>
+      <input type="range" id="dashSizeSlider" min="0.3" max="4" step="0.1" value="1" title="Length of each dash">
+    </div>
+    <div class="style-row" id="dashGapRow">
+      <label>Spacing</label>
+      <input type="range" id="dashGapSlider" min="0.3" max="4" step="0.1" value="1" title="Space between dashes / dots">
     </div>
   </div>
-  <div class="style-row" id="radiusRow">
-    <label>Corners</label>
-    <input type="range" id="radiusSlider" min="0" max="60" step="1" value="0">
+
+  <div class="panel-section" data-section="shape">
+    <div class="section-label">Shape</div>
+    <div class="style-row" id="radiusRow">
+      <label>Corners</label>
+      <input type="range" id="radiusSlider" min="0" max="60" step="1" value="0">
+    </div>
+    <div class="style-row" id="fillRow">
+      <label>Fill</label>
+      <input type="color" id="fillColorInput" value="#4a5cf0" title="Color inside the shape">
+      <button class="seg-btn" id="fillNoneBtn" title="Remove the fill">None</button>
+      <input type="range" id="fillOpacitySlider" min="0.05" max="1" step="0.05" value="0.6" title="Fill transparency">
+    </div>
   </div>
-  <div class="style-row" id="fillRow">
-    <label>Fill</label>
-    <input type="color" id="fillColorInput" value="#4a5cf0" title="Color inside the shape">
-    <button class="seg-btn" id="fillNoneBtn" title="Remove the fill" style="padding:6px 10px;">None</button>
-    <input type="range" id="fillOpacitySlider" min="0.05" max="1" step="0.05" value="0.6" title="Fill transparency">
-  </div>
-  <div class="style-row" id="opacityRow">
-    <label>Opacity</label>
-    <input type="range" id="opacitySlider" min="0.1" max="1" step="0.05" value="0.6">
-  </div>
-  <div class="style-row" id="lockRow">
-    <button class="seg-btn" id="lockToggleBtn" style="padding:6px 12px;">🔒 Lock image</button>
+
+  <div class="panel-section" data-section="image">
+    <div class="section-label">Image</div>
+    <div class="style-row" id="opacityRow">
+      <label>Opacity</label>
+      <input type="range" id="opacitySlider" min="0.1" max="1" step="0.05" value="0.6">
+    </div>
+    <div class="style-row" id="lockRow">
+      <button class="seg-btn" id="lockToggleBtn">🔒 Lock image</button>
+    </div>
   </div>
 </div>
 

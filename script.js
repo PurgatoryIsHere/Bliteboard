@@ -44,6 +44,8 @@ const PALETTE = ['#232428', '#f4f4f5', '#e5484d', '#f5a623', '#2fb344', '#4a5cf0
 let currentColor = PALETTE[0];
 let currentThickness = 1.5;
 let currentLineStyle = 'plain'; // 'plain' | 'arrow'
+let currentDashSize = 1;        // dash length multiplier (dashed only)
+let currentDashGap = 1;         // spacing multiplier (dashed and dotted)
 let currentDash = 'solid';      // 'solid' | 'dashed' | 'dotted' (lines, outlines, drawings)
 let currentRadius = 0; // corner radius for new rectangles
 let currentFill = null;        // interior color for rectangles/ellipses (null = no fill)
@@ -132,7 +134,11 @@ function refreshStylePanel(){
     showRadius = (obj.type === 'rect');
     showFill = (obj.type === 'rect' || obj.type === 'ellipse');
     showDash = ['line','rect','ellipse','path'].includes(obj.type);
-    if(showDash) currentDash = obj.dash || 'solid';
+    if(showDash){
+      currentDash = obj.dash || 'solid';
+      currentDashSize = obj.dashSize || 1;
+      currentDashGap = obj.dashGap || 1;
+    }
     if(showFill){ currentFill = obj.fill || null; currentFillOpacity = typeof obj.fillOpacity === 'number' ? obj.fillOpacity : 0.6; }
     if('color' in obj) currentColor = obj.color;
     else if('bg' in obj) currentColor = obj.bg;
@@ -168,6 +174,10 @@ function refreshStylePanel(){
   setDisplay('fillRow', showFill ? 'flex' : 'none');
   setDisplay('dashRow', showDash ? 'flex' : 'none');
   document.querySelectorAll('#dashToggle .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.value === currentDash));
+  setDisplay('dashSizeRow', (showDash && currentDash === 'dashed') ? 'flex' : 'none'); // a dot's size is just the line thickness
+  setDisplay('dashGapRow', (showDash && currentDash !== 'solid') ? 'flex' : 'none');
+  const dsl = document.getElementById('dashSizeSlider'); if(dsl) dsl.value = currentDashSize;
+  const dgl = document.getElementById('dashGapSlider'); if(dgl) dgl.value = currentDashGap;
   if(showFill){
     const fc = document.getElementById('fillColorInput');
     if(fc) fc.value = currentFill || fc.value;
@@ -190,6 +200,22 @@ function refreshStylePanel(){
     return o && o.groupId;
   });
   setDisabled('ungroupBtn', !canUngroup);
+
+  // header: what is being edited
+  const TYPE_NAMES = { rect:'Rectangle', ellipse:'Ellipse', line:'Line', path:'Drawing', sticky:'Sticky note', text:'Text', image:'Reference image', fill:'Fill' };
+  const TOOL_NAMES = { pen:'Pen', rect:'Rectangle', ellipse:'Ellipse', line:'Line', sticky:'Sticky note', text:'Text', fill:'Fill' };
+  const titleEl = document.getElementById('panelTitle');
+  if(titleEl) titleEl.textContent = obj ? (TYPE_NAMES[obj.type] || 'Properties') : ((TOOL_NAMES[tool] || 'Properties') + ' (new)');
+  syncPanelSections();
+}
+
+// Hide any section whose rows are all hidden, so the panel only ever shows
+// headings that have something under them.
+function syncPanelSections(){
+  document.querySelectorAll('#stylePanel .panel-section').forEach(sec => {
+    const anyVisible = [...sec.querySelectorAll('.style-row')].some(r => r.style.display !== 'none');
+    sec.style.display = anyVisible ? '' : 'none';
+  });
 }
 
 // build swatches
@@ -326,15 +352,24 @@ document.querySelectorAll('#dashToggle .seg-btn').forEach(btn => {
     currentDash = btn.dataset.value;
     document.querySelectorAll('#dashToggle .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
     if(selectedId){ applyStyleToSelection(); pushHistory(); }
+    refreshStylePanel();
   });
 });
+
+const dashSizeSlider = document.getElementById('dashSizeSlider');
+const dashGapSlider = document.getElementById('dashGapSlider');
+dashSizeSlider.addEventListener('input', (e) => { currentDashSize = parseFloat(e.target.value); if(selectedId) applyStyleToSelection(); });
+dashGapSlider.addEventListener('input', (e) => { currentDashGap = parseFloat(e.target.value); if(selectedId) applyStyleToSelection(); });
+dashSizeSlider.addEventListener('change', () => { if(selectedId) pushHistory(); });
+dashGapSlider.addEventListener('change', () => { if(selectedId) pushHistory(); });
 
 // Dashed / dotted strokes: the pattern scales with line thickness, and round
 // caps turn the dotted pattern's zero-length dashes into actual round dots.
 function applyDash(o){
   const w = o.width || 1;
-  if(o.dash === 'dotted') ctx.setLineDash([0.01, Math.max(4, w * 2.2)]);
-  else if(o.dash === 'dashed') ctx.setLineDash([Math.max(8, w * 4.5), Math.max(6, w * 3)]);
+  const size = o.dashSize || 1, gap = o.dashGap || 1;
+  if(o.dash === 'dotted') ctx.setLineDash([0.01, Math.max(4, w * 2.2) * gap]);
+  else if(o.dash === 'dashed') ctx.setLineDash([Math.max(8, w * 4.5) * size, Math.max(6, w * 3) * gap]);
   else ctx.setLineDash([]);
 }
 
@@ -345,7 +380,9 @@ function applyStyleToSelection(){
   else if('bg' in obj) obj.bg = currentColor;
   if('width' in obj) obj.width = currentThickness;
   if(obj.type === 'line') obj.arrow = (currentLineStyle === 'arrow');
-  if(['line','rect','ellipse','path'].includes(obj.type)) obj.dash = currentDash;
+  if(['line','rect','ellipse','path'].includes(obj.type)){
+    obj.dash = currentDash; obj.dashSize = currentDashSize; obj.dashGap = currentDashGap;
+  }
   if(obj.type === 'rect') obj.radius = currentRadius;
   if(obj.type === 'rect' || obj.type === 'ellipse'){
     obj.fill = currentFill;
@@ -788,7 +825,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
   if(tool === 'pen'){
     isDrawing = true;
-    currentPath = { id: idOf(), type:'path', color: currentColor, width: currentThickness, dash: currentDash, points: [{x:w.x,y:w.y}], layerId: activeLayerId };
+    currentPath = { id: idOf(), type:'path', color: currentColor, width: currentThickness, dash: currentDash, dashSize: currentDashSize, dashGap: currentDashGap, points: [{x:w.x,y:w.y}], layerId: activeLayerId };
     objects.push(currentPath);
     return;
   }
@@ -809,7 +846,7 @@ canvas.addEventListener('pointerdown', (e) => {
     shapeStart = w;
     previewShape = { id: null, type: tool, color: currentColor, width: currentThickness,
       x: w.x, y: w.y, w: 0, h: 0, layerId: activeLayerId, radius: currentRadius,
-      fill: currentFill, fillOpacity: currentFillOpacity, dash: currentDash };
+      fill: currentFill, fillOpacity: currentFillOpacity, dash: currentDash, dashSize: currentDashSize, dashGap: currentDashGap };
     return;
   }
 
@@ -817,7 +854,7 @@ canvas.addEventListener('pointerdown', (e) => {
     isDrawing = true;
     shapeStart = w;
     previewShape = { id: null, type: 'line', color: currentColor, width: currentThickness,
-      points: [{x:w.x, y:w.y}, {x:w.x, y:w.y}], arrow: currentLineStyle === 'arrow', dash: currentDash, layerId: activeLayerId };
+      points: [{x:w.x, y:w.y}, {x:w.x, y:w.y}], arrow: currentLineStyle === 'arrow', dash: currentDash, dashSize: currentDashSize, dashGap: currentDashGap, layerId: activeLayerId };
     return;
   }
 

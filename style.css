@@ -82,20 +82,39 @@
   }
   .tool-btn:hover .kbd{ opacity:1; }
 
-  /* Contextual style panel (thickness / color) */
+  /* Properties panel (docked right, under the top-right buttons). Sections
+     hide themselves when empty; the panel scrolls if it ever grows tall, so
+     new controls can simply be added as more rows. */
   .style-panel{
-    position:fixed; top:14px; left:50%; transform:translateX(-50%);
-    z-index:5; display:none; align-items:center; gap:14px;
+    position:fixed; top:64px; right:14px; z-index:5; display:none;
+    flex-direction:column; gap:12px; width:276px;
+    max-height:calc(100vh - 64px - 76px); overflow-y:auto; overscroll-behavior:contain;
     background: var(--panel); color: var(--panel-text);
-    padding:9px 16px; border-radius:12px; box-shadow: var(--shadow);
-    font-size:12px;
-    /* wrap onto a second row rather than running under the top-right buttons */
-    flex-wrap:wrap; justify-content:center; row-gap:8px;
-    max-width:calc(100vw - 460px);
+    padding:12px 14px 14px; border-radius:12px; box-shadow: var(--shadow);
+    font-size:12px; scrollbar-width:thin;
   }
   .style-panel.show{ display:flex; }
+  .panel-head{
+    font-size:13px; font-weight:600; letter-spacing:0.01em;
+    padding-bottom:2px;
+  }
+  .panel-section{
+    display:flex; flex-direction:column; gap:8px;
+    padding-top:10px; border-top:1px solid var(--border);
+  }
+  .panel-head + .panel-section{ border-top:none; padding-top:0; }
+  .section-label{
+    font-size:10px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase;
+    color: var(--panel-text-dim); opacity:0.75;
+  }
   .style-row{ display:flex; align-items:center; gap:8px; }
   .style-row label{ color: var(--panel-text-dim); font-weight:500; }
+  .style-panel .style-row{ min-height:28px; }
+  .style-panel .style-row > label{ width:62px; flex:none; }
+  .style-panel .style-row > input[type="range"]{ flex:1; min-width:0; width:auto; }
+  .style-panel .seg-btn{ padding:6px 9px; }
+  .style-panel #lockRow .seg-btn{ width:100%; padding:8px 12px; }
+  .style-panel .swatches{ flex-wrap:wrap; flex:1; }
   .swatches{ display:flex; gap:6px; }
   .swatch{
     width:20px; height:20px; border-radius:50%; cursor:pointer;
