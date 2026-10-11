@@ -34,7 +34,7 @@
   #board.tool-pan{ cursor: grab; }
   #board.tool-pan.panning{ cursor: grabbing; }
   #board.tool-pen, #board.tool-eraser{ cursor: crosshair; }
-  #board.tool-rect, #board.tool-ellipse, #board.tool-line{ cursor: crosshair; }
+  #board.tool-rect, #board.tool-ellipse, #board.tool-shape, #board.tool-line{ cursor: crosshair; }
   #board.tool-sticky, #board.tool-text{ cursor: copy; }
 
   /* Top-left brand / title */
@@ -352,3 +352,19 @@
   }
   .modal-btn:hover{ background: var(--panel-hover); }
   .modal-btn.primary{ background: var(--accent); color:#fff; }
+
+  /* Shapes flyout (opens beside the toolbar's Shapes tab) */
+  .shape-flyout{
+    position:fixed; z-index:7; display:none;
+    grid-template-columns: repeat(4, 40px); gap:4px; padding:8px;
+    background: var(--panel); border-radius:12px; box-shadow: var(--shadow);
+  }
+  .shape-flyout.show{ display:grid; }
+  .shape-pick{
+    width:40px; height:40px; border:none; border-radius:9px; background:transparent;
+    color: var(--panel-text-dim); cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .shape-pick:hover{ background: var(--panel-hover); color: var(--panel-text); }
+  .shape-pick.active{ background: var(--panel-active); color: var(--accent-contrast); }
+  .shape-pick svg{ width:22px; height:22px; }
+  .style-row .val{ min-width:22px; text-align:right; font-size:12px; color: var(--panel-text-dim); }

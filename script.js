@@ -49,6 +49,7 @@ let currentDashGap = 1;         // spacing multiplier (dashed and dotted)
 let currentDash = 'solid';      // 'solid' | 'dashed' | 'dotted' (lines, outlines, drawings)
 let currentRadius = 0; // corner radius for new rectangles
 let currentFill = null;        // interior color for rectangles/ellipses (null = no fill)
+let currentLabelSize = 14;     // text size inside shapes
 let currentFillOpacity = 0.6;  // interior transparency (1 = solid)
 
 function snapshot(){
@@ -93,7 +94,8 @@ const TOOL_KEYS = { v:'select', h:'pan', p:'pen', e:'eraser', r:'rect', o:'ellip
 
 function setTool(t){
   tool = t;
-  document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t || (b.dataset.group === 'shapes' && SHAPE_TOOLS.includes(t))));
+  noteShapeTool(t);
   canvas.className = 'tool-' + t;
   if(t !== 'fill'){
     // Fill deliberately depends on whatever is already selected, so
@@ -132,14 +134,14 @@ function refreshStylePanel(){
     showThickness = ('width' in obj);
     showLineStyle = (obj.type === 'line');
     showRadius = (obj.type === 'rect');
-    showFill = (obj.type === 'rect' || obj.type === 'ellipse');
-    showDash = ['line','rect','ellipse','path'].includes(obj.type);
+    showFill = (obj.type === 'rect' || obj.type === 'ellipse' || obj.type === 'shape');
+    showDash = ['line','rect','ellipse','shape','path'].includes(obj.type);
     if(showDash){
       currentDash = obj.dash || 'solid';
       currentDashSize = obj.dashSize || 1;
       currentDashGap = obj.dashGap || 1;
     }
-    if(showFill){ currentFill = obj.fill || null; currentFillOpacity = typeof obj.fillOpacity === 'number' ? obj.fillOpacity : 0.6; }
+    if(showFill){ currentLabelSize = obj.labelSize || 14; currentFill = obj.fill || null; currentFillOpacity = typeof obj.fillOpacity === 'number' ? obj.fillOpacity : 0.6; }
     if('color' in obj) currentColor = obj.color;
     else if('bg' in obj) currentColor = obj.bg;
     if('width' in obj){ currentThickness = obj.width; thicknessSlider.value = obj.width; thicknessInput.value = obj.width; }
@@ -159,12 +161,12 @@ function refreshStylePanel(){
       }
     }
   } else {
-    showColor = ['pen','rect','ellipse','line','sticky','text','fill'].includes(tool);
-    showThickness = ['pen','rect','ellipse','line'].includes(tool);
+    showColor = ['pen','rect','ellipse','shape','line','sticky','text','fill'].includes(tool);
+    showThickness = ['pen','rect','ellipse','shape','line'].includes(tool);
     showLineStyle = (tool === 'line');
     showRadius = (tool === 'rect');
-    showFill = (tool === 'rect' || tool === 'ellipse');
-    showDash = ['pen','rect','ellipse','line'].includes(tool);
+    showFill = (tool === 'rect' || tool === 'ellipse' || tool === 'shape');
+    showDash = ['pen','rect','ellipse','shape','line'].includes(tool);
   }
   if(panel) panel.classList.toggle('show', showColor || showThickness || showImageControls);
   setDisplay('colorRow', showColor ? 'flex' : 'none');
@@ -172,6 +174,9 @@ function refreshStylePanel(){
   setDisplay('lineStyleRow', showLineStyle ? 'flex' : 'none');
   setDisplay('radiusRow', showRadius ? 'flex' : 'none');
   setDisplay('fillRow', showFill ? 'flex' : 'none');
+  setDisplay('labelSizeRow', showFill ? 'flex' : 'none');
+  const lsl = document.getElementById('labelSizeSlider'); if(lsl) lsl.value = currentLabelSize;
+  const lsv = document.getElementById('labelSizeVal'); if(lsv) lsv.textContent = currentLabelSize;
   setDisplay('dashRow', showDash ? 'flex' : 'none');
   document.querySelectorAll('#dashToggle .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.value === currentDash));
   setDisplay('dashSizeRow', (showDash && currentDash === 'dashed') ? 'flex' : 'none'); // a dot's size is just the line thickness
@@ -202,8 +207,8 @@ function refreshStylePanel(){
   setDisabled('ungroupBtn', !canUngroup);
 
   // header: what is being edited
-  const TYPE_NAMES = { rect:'Rectangle', ellipse:'Ellipse', line:'Line', path:'Drawing', sticky:'Sticky note', text:'Text', image:'Reference image', fill:'Fill' };
-  const TOOL_NAMES = { pen:'Pen', rect:'Rectangle', ellipse:'Ellipse', line:'Line', sticky:'Sticky note', text:'Text', fill:'Fill' };
+  const TYPE_NAMES = { shape:(obj && SHAPE_LABELS[obj.kind]) || 'Shape', rect:'Rectangle', ellipse:'Ellipse', line:'Line', path:'Drawing', sticky:'Sticky note', text:'Text', image:'Reference image', fill:'Fill' };
+  const TOOL_NAMES = { shape:(SHAPE_LABELS[currentShapeKind] || 'Shape'), pen:'Pen', rect:'Rectangle', ellipse:'Ellipse', line:'Line', sticky:'Sticky note', text:'Text', fill:'Fill' };
   const titleEl = document.getElementById('panelTitle');
   if(titleEl) titleEl.textContent = obj ? (TYPE_NAMES[obj.type] || 'Properties') : ((TOOL_NAMES[tool] || 'Properties') + ' (new)');
   syncPanelSections();
@@ -278,6 +283,14 @@ thicknessInput.addEventListener('change', () => {
 thicknessInput.addEventListener('keydown', (e) => e.stopPropagation());
 updateThicknessPreview();
 
+const labelSizeSlider = document.getElementById('labelSizeSlider');
+labelSizeSlider.addEventListener('input', (e) => {
+  currentLabelSize = parseInt(e.target.value, 10);
+  document.getElementById('labelSizeVal').textContent = currentLabelSize;
+  if(selectedId){ applyStyleToSelection(); render(); }
+});
+labelSizeSlider.addEventListener('change', () => { if(selectedId) pushHistory(); });
+
 const radiusSlider = document.getElementById('radiusSlider');
 radiusSlider.addEventListener('input', (e) => {
   currentRadius = parseFloat(e.target.value);
@@ -293,7 +306,7 @@ const fillNoneBtn = document.getElementById('fillNoneBtn');
 const fillOpacitySlider = document.getElementById('fillOpacitySlider');
 function applyFillToSelection(){
   const obj = objects.find(o => o.id === selectedId);
-  if(obj && (obj.type === 'rect' || obj.type === 'ellipse')){
+  if(obj && (obj.type === 'rect' || obj.type === 'ellipse' || obj.type === 'shape')){
     obj.fill = currentFill;
     obj.fillOpacity = currentFillOpacity;
     render();
@@ -380,11 +393,12 @@ function applyStyleToSelection(){
   else if('bg' in obj) obj.bg = currentColor;
   if('width' in obj) obj.width = currentThickness;
   if(obj.type === 'line') obj.arrow = (currentLineStyle === 'arrow');
-  if(['line','rect','ellipse','path'].includes(obj.type)){
+  if(['line','rect','ellipse','shape','path'].includes(obj.type)){
     obj.dash = currentDash; obj.dashSize = currentDashSize; obj.dashGap = currentDashGap;
   }
   if(obj.type === 'rect') obj.radius = currentRadius;
-  if(obj.type === 'rect' || obj.type === 'ellipse'){
+  if(obj.type === 'rect' || obj.type === 'ellipse' || obj.type === 'shape'){
+    obj.labelSize = currentLabelSize;
     obj.fill = currentFill;
     obj.fillOpacity = currentFillOpacity;
   }
@@ -392,6 +406,7 @@ function applyStyleToSelection(){
 }
 
 document.querySelectorAll('.tool-btn').forEach(btn => {
+  if(!btn.dataset.tool) return; // the Shapes tab and Insert image have their own handlers
   btn.addEventListener('click', () => setTool(btn.dataset.tool));
 });
 
@@ -593,7 +608,7 @@ function cornersFromBounds(b){
 }
 function getHandles(o){
   let handles;
-  if(o.type === 'rect' || o.type === 'ellipse' || o.type === 'sticky' || o.type === 'fill'){
+  if(o.type === 'rect' || o.type === 'ellipse' || o.type === 'shape' || o.type === 'sticky' || o.type === 'fill'){
     handles = cornersFromBounds({x:o.x, y:o.y, w:o.w, h:o.h});
   } else if(o.type === 'image'){
     handles = o.locked ? [] : cornersFromBounds({x:o.x, y:o.y, w:o.w, h:o.h});
@@ -660,6 +675,8 @@ function hitTest(wx, wy){
       }
     } else if(o.type === 'rect' || o.type === 'sticky' || o.type === 'image' || o.type === 'fill'){
       if(lx >= o.x && lx <= o.x + o.w && ly >= o.y && ly <= o.y + o.h) return o;
+    } else if(o.type === 'shape'){
+      if(pointInShape(o, lx, ly)) return o;
     } else if(o.type === 'ellipse'){
       const cx = o.x + o.w/2, cy = o.y + o.h/2;
       const rx = Math.abs(o.w/2) || 1, ry = Math.abs(o.h/2) || 1;
@@ -841,12 +858,12 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  if(tool === 'rect' || tool === 'ellipse'){
+  if(tool === 'rect' || tool === 'ellipse' || tool === 'shape'){
     isDrawing = true;
     shapeStart = w;
-    previewShape = { id: null, type: tool, color: currentColor, width: currentThickness,
+    previewShape = { id: null, type: tool, kind: tool === 'shape' ? currentShapeKind : undefined, color: currentColor, width: currentThickness,
       x: w.x, y: w.y, w: 0, h: 0, layerId: activeLayerId, radius: currentRadius,
-      fill: currentFill, fillOpacity: currentFillOpacity, dash: currentDash, dashSize: currentDashSize, dashGap: currentDashGap };
+      fill: currentFill, fillOpacity: currentFillOpacity, labelSize: currentLabelSize, dash: currentDash, dashSize: currentDashSize, dashGap: currentDashGap };
     return;
   }
 
@@ -945,7 +962,7 @@ canvas.addEventListener('pointermove', (e) => {
         y: resizeAnchor.y + (dy < 0 ? -1 : 1) * k * h0,
       };
     }
-    if(['rect','ellipse','sticky','image','fill'].includes(resizeObj.type)){
+    if(['rect','ellipse','shape','sticky','image','fill'].includes(resizeObj.type)){
       const nx = Math.min(resizeAnchor.x, lw.x);
       const ny = Math.min(resizeAnchor.y, lw.y);
       resizeObj.x = nx;
@@ -1275,14 +1292,14 @@ function openEditorForSelected(){
       if(ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); inp.blur(); }
       if(ev.key === 'Escape') inp.blur();
     });
-  } else if(obj.type === 'rect' || obj.type === 'ellipse'){
+  } else if(obj.type === 'rect' || obj.type === 'ellipse' || obj.type === 'shape'){
     const marginX = obj.w * 0.15, marginY = obj.h * 0.3;
     const ta = document.createElement('textarea');
     ta.className = 'edit-input';
     ta.style.textAlign = 'center';
     positionEditor(ta, obj.x+marginX, obj.y+marginY, Math.max(20, obj.w-marginX*2), Math.max(20, obj.h-marginY*2));
     ta.style.background = 'transparent';
-    ta.style.fontSize = (14*scale) + 'px';
+    ta.style.fontSize = ((obj.labelSize || 14)*scale) + 'px';
     ta.style.color = obj.color;
     ta.value = obj.label || '';
     document.body.appendChild(ta);
@@ -1331,7 +1348,7 @@ canvas.addEventListener('dblclick', (e) => {
   }
 
   const hit = hitTest(w.x, w.y);
-  if(hit && ['sticky', 'text', 'rect', 'ellipse'].includes(hit.type)){
+  if(hit && ['sticky', 'text', 'rect', 'ellipse', 'shape'].includes(hit.type)){
     setTool('select');
     selectedId = hit.id;
     refreshStylePanel();
@@ -1534,6 +1551,26 @@ function drawObject(o, selected, isPreview){
     ctx.stroke();
     ctx.setLineDash([]);
     if(o.label && o.id !== editingObjectId) drawShapeLabel(o, o.x+o.w/2, o.y+o.h/2, Math.max(10, Math.abs(o.w)*0.8));
+  } else if(o.type === 'shape'){
+    const poly = SHAPE_POLYS[o.kind] || SHAPE_POLYS.triangle;
+    ctx.strokeStyle = o.color; ctx.lineWidth = o.width;
+    ctx.beginPath();
+    poly.forEach((p, i) => {
+      const px = o.x + p[0]*o.w, py = o.y + p[1]*o.h;
+      if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+    if(o.fill){
+      ctx.save();
+      ctx.globalAlpha = typeof o.fillOpacity === 'number' ? o.fillOpacity : 0.6;
+      ctx.fillStyle = o.fill;
+      ctx.fill();
+      ctx.restore();
+    }
+    applyDash(o);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if(o.label && o.id !== editingObjectId) drawShapeLabel(o, o.x+o.w/2, o.y+o.h/2, Math.max(10, Math.abs(o.w)*0.7));
   } else if(o.type === 'line'){
     ctx.strokeStyle = o.color; ctx.lineWidth = o.width;
     applyDash(o);
@@ -1712,11 +1749,12 @@ function drawShapeLabel(o, cx, cy, maxWidth){
   if(!o.label) return;
   ctx.save();
   ctx.fillStyle = o.color;
-  ctx.font = '14px Inter, sans-serif';
+  const fs = o.labelSize || 14;
+  ctx.font = fs + 'px Inter, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const lines = wrapLines(o.label, maxWidth);
-  const lineHeight = 17;
+  const lineHeight = Math.round(fs * 1.2);
   const startY = cy - ((lines.length-1) * lineHeight) / 2;
   lines.forEach((line, i) => ctx.fillText(line, cx, startY + i*lineHeight));
   ctx.restore();
@@ -1794,7 +1832,7 @@ document.getElementById('imageFileInput').addEventListener('change', (e) => {
 // the region wasn't actually enclosed, so nothing is filled.
 const FILL_MAX_RASTER_DIM = 2000;
 const FILL_SCOPE_MARGIN = 40; // world units of padding around the scope's own bounds
-const FILLABLE_TYPES = ['rect', 'ellipse', 'line', 'path'];
+const FILLABLE_TYPES = ['rect', 'ellipse', 'shape', 'line', 'path'];
 const tintCache = {}; // "id|color" -> tinted canvas, so recoloring a fill doesn't require a full retint every frame
 
 function showToast(msg, isWarning){
@@ -1905,11 +1943,13 @@ function tryFillAt(worldX, worldY){
 
   // A lone rectangle/ellipse stores its fill as part of the shape itself
   // (it then moves, resizes, rotates and copies with it).
-  if(scopeObjects.length === 1 && (scopeObjects[0].type === 'rect' || scopeObjects[0].type === 'ellipse')){
+  if(scopeObjects.length === 1 && (scopeObjects[0].type === 'rect' || scopeObjects[0].type === 'ellipse' || scopeObjects[0].type === 'shape')){
     const so = scopeObjects[0];
     const p = so.rotation ? toLocal(worldX, worldY, so) : {x:worldX, y:worldY};
     let inside;
-    if(so.type === 'rect'){
+    if(so.type === 'shape'){
+      inside = pointInShape(so, p.x, p.y);
+    } else if(so.type === 'rect'){
       inside = p.x >= so.x && p.x <= so.x+so.w && p.y >= so.y && p.y <= so.y+so.h;
     } else {
       const rx = Math.abs(so.w/2) || 1, ry = Math.abs(so.h/2) || 1;

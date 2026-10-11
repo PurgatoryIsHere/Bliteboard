@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261008b">
+<link rel="stylesheet" href="style.css?v=20261010a">
 </head>
 <body>
 
@@ -94,13 +94,9 @@
     <svg viewBox="0 0 24 24" fill="none"><path d="M14 4l6 6-9 9H7l-3-3 10-12Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M7 19h13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
   </button>
   <div class="tool-sep"></div>
-  <button class="tool-btn" data-tool="rect" title="Rectangle">
-    <span class="kbd">Rectangle (R)</span>
-    <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="6" width="16" height="12" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg>
-  </button>
-  <button class="tool-btn" data-tool="ellipse" title="Ellipse">
-    <span class="kbd">Ellipse (O)</span>
-    <svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="12" rx="8" ry="6" stroke="currentColor" stroke-width="1.8"/></svg>
+  <button class="tool-btn" id="shapeToolBtn" data-group="shapes" title="Shapes">
+    <span class="kbd">Shapes (R / O) — click to choose</span>
+    <svg viewBox="0 0 24 24" fill="none" id="shapeToolIcon"></svg>
   </button>
   <button class="tool-btn" data-tool="line" title="Line / Arrow">
     <span class="kbd">Line (L)</span>
@@ -181,6 +177,11 @@
       <label>Corners</label>
       <input type="range" id="radiusSlider" min="0" max="60" step="1" value="0">
     </div>
+    <div class="style-row" id="labelSizeRow">
+      <label>Text size</label>
+      <input type="range" id="labelSizeSlider" min="8" max="72" step="1" value="14" title="Size of the text inside the shape">
+      <span id="labelSizeVal" class="val">14</span>
+    </div>
     <div class="style-row" id="fillRow">
       <label>Fill</label>
       <input type="color" id="fillColorInput" value="#4a5cf0" title="Color inside the shape">
@@ -228,9 +229,10 @@
   <button id="zoomIn">+</button>
 </div>
 
-<script src="shapes.js?v=20261008b"></script>
-<script src="boards.js?v=20261008b"></script>
-<script src="layers.js?v=20261008b"></script>
-<script src="script.js?v=20261008b"></script>
+<script src="stdshapes.js?v=20261010a"></script>
+<script src="shapes.js?v=20261010a"></script>
+<script src="boards.js?v=20261010a"></script>
+<script src="layers.js?v=20261010a"></script>
+<script src="script.js?v=20261010a"></script>
 </body>
 </html>
