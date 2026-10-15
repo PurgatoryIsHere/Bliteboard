@@ -49,6 +49,7 @@ let currentDashGap = 1;         // spacing multiplier (dashed and dotted)
 let currentDash = 'solid';      // 'solid' | 'dashed' | 'dotted' (lines, outlines, drawings)
 let currentRadius = 0; // corner radius for new rectangles
 let currentFill = null;        // interior color for rectangles/ellipses (null = no fill)
+let currentFontSize = 20;      // free text size
 let currentLabelSize = 14;     // text size inside shapes
 let currentFillOpacity = 0.6;  // interior transparency (1 = solid)
 
@@ -127,7 +128,8 @@ function setDisplay(id, value){
 function refreshStylePanel(){
   const panel = bySelector('stylePanel');
   const obj = (tool === 'select') ? objects.find(o => o.id === selectedId) : null;
-  let showColor, showThickness, showLineStyle, showRadius, showFill, showDash;
+  let showColor, showThickness, showLineStyle, showRadius, showFill, showDash, showFontSize = false;
+  const multiSel = (tool === 'select' && multiSelectedIds.length > 1);
   const showImageControls = !!(obj && obj.type === 'image');
   if(obj){
     showColor = ('color' in obj) || ('bg' in obj);
@@ -141,6 +143,7 @@ function refreshStylePanel(){
       currentDashSize = obj.dashSize || 1;
       currentDashGap = obj.dashGap || 1;
     }
+    if(obj.type === 'text'){ showFontSize = true; currentFontSize = Math.round(obj.fontSize || 20); }
     if(showFill){ currentLabelSize = obj.labelSize || 14; currentFill = obj.fill || null; currentFillOpacity = typeof obj.fillOpacity === 'number' ? obj.fillOpacity : 0.6; }
     if('color' in obj) currentColor = obj.color;
     else if('bg' in obj) currentColor = obj.bg;
@@ -167,8 +170,13 @@ function refreshStylePanel(){
     showRadius = (tool === 'rect');
     showFill = (tool === 'rect' || tool === 'ellipse' || tool === 'shape');
     showDash = ['pen','rect','ellipse','shape','line'].includes(tool);
+    showFontSize = (tool === 'text');
   }
-  if(panel) panel.classList.toggle('show', showColor || showThickness || showImageControls);
+  const showArrange = !!obj || multiSel;
+  if(panel) panel.classList.toggle('show', showColor || showThickness || showImageControls || showArrange);
+  setDisplay('arrangeRow', showArrange ? 'flex' : 'none');
+  setDisplay('fontSizeRow', showFontSize ? 'flex' : 'none');
+  if(showFontSize){ document.getElementById('fontSizeSlider').value = Math.min(150, currentFontSize); document.getElementById('fontSizeInput').value = currentFontSize; }
   setDisplay('colorRow', showColor ? 'flex' : 'none');
   setDisplay('thicknessRow', showThickness ? 'flex' : 'none');
   setDisplay('lineStyleRow', showLineStyle ? 'flex' : 'none');
@@ -176,7 +184,7 @@ function refreshStylePanel(){
   setDisplay('fillRow', showFill ? 'flex' : 'none');
   setDisplay('labelSizeRow', showFill ? 'flex' : 'none');
   const lsl = document.getElementById('labelSizeSlider'); if(lsl) lsl.value = currentLabelSize;
-  const lsv = document.getElementById('labelSizeVal'); if(lsv) lsv.textContent = currentLabelSize;
+  const lsv = document.getElementById('labelSizeVal'); if(lsv) lsv.value = currentLabelSize;
   setDisplay('dashRow', showDash ? 'flex' : 'none');
   document.querySelectorAll('#dashToggle .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.value === currentDash));
   setDisplay('dashSizeRow', (showDash && currentDash === 'dashed') ? 'flex' : 'none'); // a dot's size is just the line thickness
@@ -210,7 +218,7 @@ function refreshStylePanel(){
   const TYPE_NAMES = { shape:(obj && SHAPE_LABELS[obj.kind]) || 'Shape', rect:'Rectangle', ellipse:'Ellipse', line:'Line', path:'Drawing', sticky:'Sticky note', text:'Text', image:'Reference image', fill:'Fill' };
   const TOOL_NAMES = { shape:(SHAPE_LABELS[currentShapeKind] || 'Shape'), pen:'Pen', rect:'Rectangle', ellipse:'Ellipse', line:'Line', sticky:'Sticky note', text:'Text', fill:'Fill' };
   const titleEl = document.getElementById('panelTitle');
-  if(titleEl) titleEl.textContent = obj ? (TYPE_NAMES[obj.type] || 'Properties') : ((TOOL_NAMES[tool] || 'Properties') + ' (new)');
+  if(titleEl) titleEl.textContent = multiSel ? ('Selection (' + multiSelectedIds.length + ' items)') : obj ? (TYPE_NAMES[obj.type] || 'Properties') : ((TOOL_NAMES[tool] || 'Properties') + ' (new)');
   syncPanelSections();
 }
 
@@ -283,11 +291,33 @@ thicknessInput.addEventListener('change', () => {
 thicknessInput.addEventListener('keydown', (e) => e.stopPropagation());
 updateThicknessPreview();
 
+// free-text font size (slider + typed number)
+const fontSizeSlider = document.getElementById('fontSizeSlider');
+const fontSizeInput = document.getElementById('fontSizeInput');
+function setFontSize(v, commit){
+  v = Math.max(8, Math.min(300, Math.round(v) || 20));
+  currentFontSize = v;
+  fontSizeInput.value = v; fontSizeSlider.value = Math.min(150, v);
+  const o = objects.find(x => x.id === selectedId);
+  if(o && o.type === 'text'){ o.fontSize = v; render(); if(commit) pushHistory(); }
+}
+fontSizeSlider.addEventListener('input', e => setFontSize(parseFloat(e.target.value), false));
+fontSizeSlider.addEventListener('change', e => { const o = objects.find(x => x.id === selectedId); if(o && o.type === 'text') pushHistory(); });
+fontSizeInput.addEventListener('keydown', e => e.stopPropagation());
+fontSizeInput.addEventListener('change', e => setFontSize(parseFloat(e.target.value), true));
+
 const labelSizeSlider = document.getElementById('labelSizeSlider');
 labelSizeSlider.addEventListener('input', (e) => {
   currentLabelSize = parseInt(e.target.value, 10);
-  document.getElementById('labelSizeVal').textContent = currentLabelSize;
+  document.getElementById('labelSizeVal').value = currentLabelSize;
   if(selectedId){ applyStyleToSelection(); render(); }
+});
+const labelSizeVal = document.getElementById('labelSizeVal');
+labelSizeVal.addEventListener('keydown', (e) => e.stopPropagation());
+labelSizeVal.addEventListener('change', () => {
+  const v = Math.max(8, Math.min(200, parseInt(labelSizeVal.value, 10) || 14));
+  currentLabelSize = v; labelSizeVal.value = v; labelSizeSlider.value = Math.min(72, v);
+  if(selectedId){ applyStyleToSelection(); pushHistory(); render(); }
 });
 labelSizeSlider.addEventListener('change', () => { if(selectedId) pushHistory(); });
 
@@ -427,6 +457,10 @@ window.addEventListener('keydown', (e) => {
     } else if(e.key.toLowerCase() === 'g'){
       e.preventDefault();
       if(e.shiftKey) ungroupSelection(); else groupSelection();
+    } else if(e.key === ']'){
+      e.preventDefault(); arrangeSelection('front');
+    } else if(e.key === '['){
+      e.preventDefault(); arrangeSelection('back');
     }
     return;
   }
@@ -449,6 +483,8 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
+  if(e.key === ']'){ arrangeSelection('forward'); return; }
+  if(e.key === '['){ arrangeSelection('backward'); return; }
   const t = TOOL_KEYS[e.key.toLowerCase()];
   if(t) setTool(t);
 });
@@ -889,7 +925,7 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   if(tool === 'text'){
-    objects.push({ id: idOf(), type:'text', x:w.x, y:w.y, text:'', fontSize: 20, color: currentColor, layerId: activeLayerId });
+    objects.push({ id: idOf(), type:'text', x:w.x, y:w.y, text:'', fontSize: currentFontSize, color: currentColor, layerId: activeLayerId });
     pushHistory();
     setTool('select');
     selectedId = objects[objects.length-1].id;
@@ -1433,7 +1469,7 @@ function drawGrid(color){
   if(gridStyle === 'none') return;
   let gridSize = 48;
   while(gridSize * scale < 18) gridSize *= 2;
-  while(gridSize * scale > 140) gridSize /= 2;
+  while(gridSize * scale > 360) gridSize /= 2; // only subdivide once cells are large, so zoomed-in sizing stays on one clear grid
   const startX = Math.floor((-panX/scale) / gridSize) * gridSize;
   const endX = (window.innerWidth - panX) / scale;
   const startY = Math.floor((-panY/scale) / gridSize) * gridSize;
@@ -1759,6 +1795,33 @@ function drawShapeLabel(o, cx, cy, maxWidth){
   lines.forEach((line, i) => ctx.fillText(line, cx, startY + i*lineHeight));
   ctx.restore();
 }
+
+// ---------- arrange (z-order within a layer) ----------
+function arrangeSelection(mode){
+  const ids = multiSelectedIds.length > 1 ? multiSelectedIds.slice() : (selectedId ? [selectedId] : []);
+  if(!ids.length) return;
+  const sel = new Set(ids.filter(id => { const o = objects.find(x => x.id === id); return o && !isLayerLocked(o.layerId); }));
+  if(!sel.size) return;
+  const before = objects.map(o => o.id).join();
+  if(mode === 'front'){
+    objects = objects.filter(o => !sel.has(o.id)).concat(objects.filter(o => sel.has(o.id)));
+  } else if(mode === 'back'){
+    objects = objects.filter(o => sel.has(o.id)).concat(objects.filter(o => !sel.has(o.id)));
+  } else {
+    const dir = mode === 'forward' ? 1 : -1;
+    const idxs = objects.map((o, i) => i).filter(i => sel.has(objects[i].id));
+    if(dir === 1) idxs.reverse();
+    idxs.forEach(i => {
+      let j = i + dir;
+      while(j >= 0 && j < objects.length && objects[j].layerId !== objects[i].layerId) j += dir;
+      if(j < 0 || j >= objects.length || sel.has(objects[j].id)) return;
+      const tmp = objects[i]; objects[i] = objects[j]; objects[j] = tmp;
+    });
+  }
+  if(objects.map(o => o.id).join() !== before){ pushHistory(); }
+  render();
+}
+document.querySelectorAll('#arrangeBtns .seg-btn').forEach(b => b.addEventListener('click', () => arrangeSelection(b.dataset.arrange)));
 
 // ---------- clear ----------
 document.getElementById('clearBtn').addEventListener('click', () => {

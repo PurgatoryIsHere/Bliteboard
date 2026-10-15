@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261010a">
+<link rel="stylesheet" href="style.css?v=20261010b">
 </head>
 <body>
 
@@ -144,6 +144,15 @@
     </div>
   </div>
 
+  <div class="panel-section" data-section="text">
+    <div class="section-label">Text</div>
+    <div class="style-row" id="fontSizeRow">
+      <label>Font size</label>
+      <input type="range" id="fontSizeSlider" min="8" max="150" step="1" value="20">
+      <input type="number" id="fontSizeInput" class="num-input" min="8" max="300" step="1" value="20" title="Type an exact size">
+    </div>
+  </div>
+
   <div class="panel-section" data-section="stroke">
     <div class="section-label">Line &amp; outline</div>
     <div class="style-row" id="lineStyleRow">
@@ -180,13 +189,25 @@
     <div class="style-row" id="labelSizeRow">
       <label>Text size</label>
       <input type="range" id="labelSizeSlider" min="8" max="72" step="1" value="14" title="Size of the text inside the shape">
-      <span id="labelSizeVal" class="val">14</span>
+      <input type="number" id="labelSizeVal" class="num-input" min="8" max="200" step="1" value="14" title="Type an exact size">
     </div>
     <div class="style-row" id="fillRow">
       <label>Fill</label>
       <input type="color" id="fillColorInput" value="#4a5cf0" title="Color inside the shape">
       <button class="seg-btn" id="fillNoneBtn" title="Remove the fill">None</button>
       <input type="range" id="fillOpacitySlider" min="0.05" max="1" step="0.05" value="0.6" title="Fill transparency">
+    </div>
+  </div>
+
+  <div class="panel-section" data-section="arrange">
+    <div class="section-label">Arrange</div>
+    <div class="style-row" id="arrangeRow">
+      <div class="seg" id="arrangeBtns">
+        <button class="seg-btn" data-arrange="back" title="Send to back (Ctrl+[)">To back</button>
+        <button class="seg-btn" data-arrange="backward" title="Send backward ([)">Back</button>
+        <button class="seg-btn" data-arrange="forward" title="Bring forward (])">Forward</button>
+        <button class="seg-btn" data-arrange="front" title="Bring to front (Ctrl+])">To front</button>
+      </div>
     </div>
   </div>
 
@@ -229,10 +250,10 @@
   <button id="zoomIn">+</button>
 </div>
 
-<script src="stdshapes.js?v=20261010a"></script>
-<script src="shapes.js?v=20261010a"></script>
-<script src="boards.js?v=20261010a"></script>
-<script src="layers.js?v=20261010a"></script>
-<script src="script.js?v=20261010a"></script>
+<script src="stdshapes.js?v=20261010b"></script>
+<script src="shapes.js?v=20261010b"></script>
+<script src="boards.js?v=20261010b"></script>
+<script src="layers.js?v=20261010b"></script>
+<script src="script.js?v=20261010b"></script>
 </body>
 </html>
