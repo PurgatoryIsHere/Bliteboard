@@ -393,3 +393,28 @@ document.getElementById('saveBoardBtn').addEventListener('click', async () => {
   persistBoardsLibrary();
   renderBoardsPanel();
 });
+
+// ---------- new board ----------
+document.getElementById('newBoardBtn').addEventListener('click', () => {
+  if(objects.length && !confirm('Start a new board? The current board is kept only if you have saved it (use "Save current board…" or Download first).')) return;
+  objects = [];
+  layers = [{ id:'layer-1', name:'Layer 1', visible:true, locked:false }];
+  activeLayerId = 'layer-1';
+  nextLayerNum = 2;
+  nextId = 1;
+  panX = 0; panY = 0; scale = 1;
+  currentBoardName = 'Untitled board';
+  activeBoardId = null;
+  boardNameInput.value = currentBoardName;
+  selectedId = null;
+  multiSelectedIds = [];
+  history = [snapshot()];
+  historyIndex = 0;
+  updateHistoryButtons();
+  updateZoomLabel();
+  refreshStylePanel();
+  renderLayersPanel();
+  save();
+  render();
+  closeBoardsPanel();
+});
