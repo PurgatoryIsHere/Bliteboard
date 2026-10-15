@@ -1469,9 +1469,8 @@ function drawGrid(color){
   if(gridStyle === 'none') return;
   let gridSize = 48;
   while(gridSize * scale < 18) gridSize *= 2;
-  // Subdivide at most twice (48 -> 24 -> 12 world units); past that the cells just
-  // keep growing, so deep zoom stays on one steady grid.
-  while(gridSize * scale > 360 && gridSize > 12) gridSize /= 2;
+  // Never subdivide when zooming in: cells just grow. (Zooming far OUT still merges
+  // cells above so the dots don't pile up into a smear.)
   const startX = Math.floor((-panX/scale) / gridSize) * gridSize;
   const endX = (window.innerWidth - panX) / scale;
   const startY = Math.floor((-panY/scale) / gridSize) * gridSize;
