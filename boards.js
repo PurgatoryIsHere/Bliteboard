@@ -196,7 +196,7 @@ document.getElementById('importBoardFile').addEventListener('change', (e) => {
     let maxId = 0;
     objects.forEach(o => { if(o.id > maxId) maxId = o.id; });
     nextId = maxId + 1;
-    selectedId = null;
+    selectedId = null; multiSelectedIds = [];
     history = [snapshot()];
     historyIndex = 0;
     updateHistoryButtons();
@@ -335,7 +335,7 @@ function openSavedBoard(entry){
   let maxId = 0;
   objects.forEach(o => { if(o.id > maxId) maxId = o.id; });
   nextId = maxId + 1;
-  selectedId = null;
+  selectedId = null; multiSelectedIds = [];
   history = [snapshot()];
   historyIndex = 0;
   updateHistoryButtons();
