@@ -189,7 +189,7 @@ document.getElementById('importBoardFile').addEventListener('change', (e) => {
     activeLayerId = parsed.activeLayerId || layers[layers.length-1].id;
     nextLayerNum = layers.length + 1;
     ensureLayerIntegrity();
-    panX = 0; panY = 0; scale = 1;
+    fitViewToContent();
     currentBoardName = importedName;
     activeBoardId = null; // not linked to any library entry until explicitly saved
     boardNameInput.value = currentBoardName;
@@ -218,6 +218,25 @@ document.getElementById('importBoardFile').addEventListener('change', (e) => {
 
 // Renders a whole board's objects into one small thumbnail, reusing the
 // same ctx-swap trick as makeThumbnail but fitting every object's combined bounds.
+// Centers and zooms the view so every object is visible (used when a board is
+// opened or imported — boards drawn far from the origin would otherwise load
+// "empty" because the view starts at 0,0).
+function fitViewToContent(){
+  if(!objects.length){ panX = 0; panY = 0; scale = 1; return; }
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  objects.forEach(o => {
+    const r = worldBoundsOf(o);
+    minX = Math.min(minX, r.x); minY = Math.min(minY, r.y);
+    maxX = Math.max(maxX, r.x + r.w); maxY = Math.max(maxY, r.y + r.h);
+  });
+  const w = Math.max(maxX - minX, 1), h = Math.max(maxY - minY, 1);
+  const pad = 90;
+  const s = Math.min((window.innerWidth - pad*2) / w, (window.innerHeight - pad*2) / h, 1);
+  scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+  panX = window.innerWidth/2 - (minX + w/2) * scale;
+  panY = window.innerHeight/2 - (minY + h/2) * scale;
+}
+
 function makeBoardThumbnail(objs){
   const size = 48;
   const cnv = document.createElement('canvas');
@@ -328,7 +347,7 @@ function openSavedBoard(entry){
   activeLayerId = entry.data.activeLayerId || layers[layers.length-1].id;
   nextLayerNum = layers.length + 1;
   ensureLayerIntegrity();
-  panX = 0; panY = 0; scale = 1;
+  fitViewToContent();
   currentBoardName = entry.name;
   activeBoardId = entry.boardId;
   boardNameInput.value = currentBoardName;

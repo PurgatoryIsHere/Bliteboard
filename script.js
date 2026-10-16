@@ -1469,9 +1469,9 @@ function drawGrid(color){
   if(gridStyle === 'none') return;
   // The grid is ONE fixed spacing (48 world units) at every zoom level: it never
   // splits when zooming in and never merges when zooming out. When zoomed so far
-  // out that the dots would be a smear (under 8px apart) it simply isn't drawn.
+  // out that the dots would be a smear (under 5px apart) it simply isn't drawn.
   const gridSize = 48;
-  if(gridSize * scale < 8) return;
+  if(gridSize * scale < 5) return;
   const startX = Math.floor((-panX/scale) / gridSize) * gridSize;
   const endX = (window.innerWidth - panX) / scale;
   const startY = Math.floor((-panY/scale) / gridSize) * gridSize;
