@@ -609,6 +609,75 @@ function combinedBoundsOf(ids){
   });
   return { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
 }
+// ---- group resize: 4 corner handles on the multi-selection's box ----
+const GROUP_PAD = 6; // world units of padding the dashed box has around the content
+let isGroupResizing = false;
+let groupResize = null; // { anchor, grab, corner, snaps }
+function groupBoxCorners(){
+  const b = combinedBoundsOf(multiSelectedIds);
+  const x1 = b.x - GROUP_PAD, y1 = b.y - GROUP_PAD, x2 = b.x + b.w + GROUP_PAD, y2 = b.y + b.h + GROUP_PAD;
+  return { tl:{x:x1,y:y1}, tr:{x:x2,y:y1}, bl:{x:x1,y:y2}, br:{x:x2,y:y2} };
+}
+const OPPOSITE_CORNER = { tl:'br', br:'tl', tr:'bl', bl:'tr' };
+function hitTestGroupResizeHandle(wx, wy){
+  if(multiSelectedIds.length < 2) return null;
+  const c = groupBoxCorners();
+  const r = HANDLE_HIT_RADIUS/scale;
+  for(const id of ['tl','tr','bl','br']){
+    if(Math.hypot(wx - c[id].x, wy - c[id].y) < r) return id;
+  }
+  return null;
+}
+function startGroupResize(corner){
+  const c = groupBoxCorners();
+  groupResize = {
+    corner, anchor: c[OPPOSITE_CORNER[corner]], grab: c[corner],
+    snaps: multiSelectedIds.map(id => {
+      const o = objects.find(x => x.id === id);
+      if(!o) return null;
+      return {
+        id, x:o.x, y:o.y, w:o.w, h:o.h, fontSize:o.fontSize, labelSize:o.labelSize,
+        points: o.points ? JSON.parse(JSON.stringify(o.points)) : null,
+        center: centerOf(o), rotation: o.rotation || 0,
+      };
+    }).filter(Boolean),
+  };
+  isGroupResizing = true;
+}
+function updateGroupResize(wx, wy, shiftHeld){
+  const g = groupResize; if(!g) return;
+  const MIN = 0.05;
+  let sx = (wx - g.anchor.x) / (g.grab.x - g.anchor.x);
+  let sy = (wy - g.anchor.y) / (g.grab.y - g.anchor.y);
+  sx = Math.max(MIN, sx); sy = Math.max(MIN, sy);
+  if(shiftHeld){ const u = Math.max(sx, sy); sx = u; sy = u; }
+  const ax = g.anchor.x, ay = g.anchor.y;
+  const uni = Math.sqrt(sx*sy);
+  g.snaps.forEach(sn => {
+    const o = objects.find(x => x.id === sn.id); if(!o) return;
+    if(sn.points){
+      o.points = sn.points.map(p => ({ ...p, x: ax + (p.x-ax)*sx, y: ay + (p.y-ay)*sy }));
+      return;
+    }
+    if(o.type === 'text'){
+      o.x = ax + (sn.x-ax)*sx; o.y = ay + (sn.y-ay)*sy;
+      o.fontSize = Math.max(8, Math.min(300, sn.fontSize * uni));
+      return;
+    }
+    // box-like objects: scale the centre, and the size along the object's own axes
+    let lsx = sx, lsy = sy;
+    const quarter = Math.round(sn.rotation / (Math.PI/2));
+    const offAxis = Math.abs(sn.rotation - quarter*Math.PI/2) > 0.02;
+    if(offAxis){ lsx = lsy = uni; }
+    else if(Math.abs(quarter) % 2 === 1){ lsx = sy; lsy = sx; }
+    const nc = { x: ax + (sn.center.x-ax)*sx, y: ay + (sn.center.y-ay)*sy };
+    o.w = sn.w * lsx; o.h = sn.h * lsy;
+    o.x = nc.x - o.w/2; o.y = nc.y - o.h/2;
+    if(sn.labelSize) o.labelSize = Math.max(8, Math.min(200, Math.round(sn.labelSize * uni)));
+  });
+  render();
+}
+
 function groupRotateHandlePos(){
   const b = combinedBoundsOf(multiSelectedIds);
   return { x: b.x + b.w/2, y: b.y - ROTATE_HANDLE_DIST/scale };
@@ -752,6 +821,8 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   if(tool === 'select'){
+    const grCorner = hitTestGroupResizeHandle(w.x, w.y);
+    if(grCorner){ startGroupResize(grCorner); return; }
     if(multiSelectedIds.length > 1 && hitTestGroupRotateHandle(w.x, w.y)){
       isGroupRotating = true;
       groupRotatePivot = (() => { const b = combinedBoundsOf(multiSelectedIds); return {x:b.x+b.w/2, y:b.y+b.h/2}; })();
@@ -960,6 +1031,8 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
 
+  if(isGroupResizing){ updateGroupResize(w.x, w.y, e.shiftKey); return; }
+
   if(isGroupRotating && groupRotatePivot){
     const currentAngle = Math.atan2(w.y - groupRotatePivot.y, w.x - groupRotatePivot.x);
     let delta = currentAngle - groupRotateStartAngle;
@@ -1091,6 +1164,9 @@ canvas.addEventListener('pointermove', (e) => {
     if(h){
       const cursors = {tl:'nwse-resize', br:'nwse-resize', tr:'nesw-resize', bl:'nesw-resize', rotate:'grab'};
       canvas.style.cursor = cursors[h.id] || 'crosshair';
+    } else if(hitTestGroupResizeHandle(w.x, w.y)){
+      const gc = hitTestGroupResizeHandle(w.x, w.y);
+      canvas.style.cursor = (gc === 'tl' || gc === 'br') ? 'nwse-resize' : 'nesw-resize';
     } else if(multiSelectedIds.length > 1 && hitTestGroupRotateHandle(w.x, w.y)){
       canvas.style.cursor = 'grab';
     } else {
@@ -1238,6 +1314,7 @@ canvas.addEventListener('pointerup', (e) => {
     return;
   }
   if(isRotating){ isRotating = false; resizeObj = null; pushHistory(); }
+  if(isGroupResizing){ isGroupResizing = false; groupResize = null; pushHistory(); }
   if(isGroupRotating){ isGroupRotating = false; groupRotatePivot = null; groupRotateSnapshot = []; pushHistory(); }
   if(isResizing){
     isResizing = false; resizeObj = null; resizeHandleId = null; resizeAnchor = null;
@@ -1426,6 +1503,16 @@ function render(){
     ctx.lineWidth = 1.5/scale;
     ctx.setLineDash([5/scale, 4/scale]);
     ctx.strokeRect(gb.x-6, gb.y-6, gb.w+12, gb.h+12);
+    ctx.restore();
+
+    const gcs = groupBoxCorners();
+    ctx.save();
+    ['tl','tr','bl','br'].forEach(id => {
+      ctx.beginPath();
+      ctx.arc(gcs[id].x, gcs[id].y, HANDLE_RADIUS/scale, 0, Math.PI*2);
+      ctx.fillStyle = '#ffffff'; ctx.fill();
+      ctx.lineWidth = 1.5/scale; ctx.strokeStyle = '#4a5cf0'; ctx.stroke();
+    });
     ctx.restore();
 
     const handlePos = { x: gb.x + gb.w/2, y: gb.y - ROTATE_HANDLE_DIST/scale };
