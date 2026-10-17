@@ -49,7 +49,7 @@ let currentDashGap = 1;         // spacing multiplier (dashed and dotted)
 let currentDash = 'solid';      // 'solid' | 'dashed' | 'dotted' (lines, outlines, drawings)
 let currentRadius = 0; // corner radius for new rectangles
 let currentFill = null;        // interior color for rectangles/ellipses (null = no fill)
-let currentFontSize = 20;      // free text size
+let currentFontSize = 16;      // free text size
 let currentLabelSize = 14;     // text size inside shapes
 let currentFillOpacity = 0.6;  // interior transparency (1 = solid)
 
@@ -792,8 +792,8 @@ function hitTest(wx, wy){
         if(distToSegment(lx, ly, a.x, a.y, b.x, b.y) < Math.max(8, o.width)) return o;
       }
     } else if(o.type === 'text'){
-      const w = (o.text.length || 1) * o.fontSize * 0.55;
-      if(lx >= o.x && lx <= o.x + w && ly >= o.y - o.fontSize && ly <= o.y + 6) return o;
+      const tb = boundsOf(o);
+      if(lx >= tb.x && lx <= tb.x + tb.w && ly >= tb.y && ly <= tb.y + tb.h) return o;
     }
   }
   return null;
@@ -1369,6 +1369,7 @@ function openEditorForSelected(){
     positionEditor(ta, obj.x+8, obj.y+8, obj.w-16, obj.h-16);
     ta.style.background = 'transparent';
     ta.style.fontSize = (15*scale) + 'px';
+    ta.style.color = '#232428';
     ta.value = obj.text;
     document.body.appendChild(ta);
     setTimeout(() => ta.focus(), 0);
@@ -1382,15 +1383,34 @@ function openEditorForSelected(){
     ta.addEventListener('blur', finish);
     ta.addEventListener('keydown', (ev) => { if(ev.key === 'Escape') ta.blur(); ev.stopPropagation(); });
   } else if(obj.type === 'text'){
+    // sized to its own content (not a fixed big box); Enter confirms, Shift+Enter adds a line
     const inp = document.createElement('textarea');
     inp.className = 'edit-input';
-    inp.style.border = '2px solid var(--accent)';
-    positionEditor(inp, obj.x, obj.y - obj.fontSize, 260, obj.fontSize + 16);
+    inp.rows = 1;
+    inp.wrap = 'off';
+    inp.style.whiteSpace = 'pre';
+    inp.style.overflow = 'hidden';
+    inp.style.padding = '1px 3px';
     inp.style.fontSize = (obj.fontSize*scale) + 'px';
-    inp.style.color = obj.color;
+    inp.style.lineHeight = (obj.fontSize*1.25*scale) + 'px';
+    inp.style.color = readableLabelColor({ color: obj.color });
+    inp.style.background = rgbCss(shapeBackdropRGB({}));
     inp.value = obj.text;
+    const rect = canvas.getBoundingClientRect();
+    inp.style.left = (rect.left + panX + obj.x*scale - 4) + 'px';
+    inp.style.top = (rect.top + panY + (obj.y - obj.fontSize)*scale - 1) + 'px';
+    const mctx = document.createElement('canvas').getContext('2d');
+    const fit = () => {
+      mctx.font = obj.fontSize*scale + 'px Inter, sans-serif';
+      const lines = inp.value.split('\n');
+      const wpx = Math.max(...lines.map(l => mctx.measureText(l || ' ').width));
+      inp.style.width = Math.max(30, wpx + 14) + 'px';
+      inp.style.height = (lines.length * obj.fontSize*1.25*scale + 6) + 'px';
+    };
     document.body.appendChild(inp);
-    setTimeout(() => inp.focus(), 0);
+    fit();
+    setTimeout(() => { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }, 0);
+    inp.addEventListener('input', fit);
     const finish = () => {
       obj.text = inp.value;
       editingObjectId = null;
@@ -1406,17 +1426,36 @@ function openEditorForSelected(){
       if(ev.key === 'Escape') inp.blur();
     });
   } else if(obj.type === 'rect' || obj.type === 'ellipse' || obj.type === 'shape'){
-    const marginX = obj.w * 0.15, marginY = obj.h * 0.3;
+    // The editor mirrors how the label is drawn (same width, same size, centred),
+    // grows as you type so every line stays visible, and sits on an opaque
+    // backdrop with a text colour that contrasts with it.
+    const fs = obj.labelSize || 14;
+    const lh = Math.round(fs * 1.2);
+    const boxW = Math.max(60, obj.type === 'rect' ? obj.w - 16 : obj.type === 'ellipse' ? Math.abs(obj.w)*0.8 : Math.abs(obj.w)*0.7);
+    const cx = obj.x + obj.w/2, cy = obj.y + obj.h/2;
     const ta = document.createElement('textarea');
     ta.className = 'edit-input';
     ta.style.textAlign = 'center';
-    positionEditor(ta, obj.x+marginX, obj.y+marginY, Math.max(20, obj.w-marginX*2), Math.max(20, obj.h-marginY*2));
-    ta.style.background = 'transparent';
-    ta.style.fontSize = ((obj.labelSize || 14)*scale) + 'px';
-    ta.style.color = obj.color;
+    ta.style.overflow = 'hidden';
+    ta.style.padding = '2px 4px';
+    ta.style.fontSize = (fs*scale) + 'px';
+    ta.style.lineHeight = (lh*scale) + 'px';
+    ta.style.background = rgbCss(shapeBackdropRGB(obj));
+    ta.style.color = readableLabelColor(obj);
     ta.value = obj.label || '';
+    const rect = canvas.getBoundingClientRect();
+    const fit = () => {
+      ta.style.height = 'auto';
+      const h = Math.max(lh*scale + 8, ta.scrollHeight + 2);
+      ta.style.height = h + 'px';
+      ta.style.top = (rect.top + panY + cy*scale - h/2) + 'px';
+    };
+    ta.style.width = (boxW*scale + 8) + 'px';
+    ta.style.left = (rect.left + panX + cx*scale - (boxW*scale + 8)/2) + 'px';
     document.body.appendChild(ta);
-    setTimeout(() => ta.focus(), 0);
+    fit();
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 0);
+    ta.addEventListener('input', fit);
     const finish = () => {
       obj.label = ta.value;
       editingObjectId = null;
@@ -1741,7 +1780,7 @@ function drawObject(o, selected, isPreview){
     if(o.id !== editingObjectId){
       ctx.fillStyle = o.color;
       ctx.font = `${o.fontSize}px Inter, sans-serif`;
-      ctx.fillText(o.text || '', o.x, o.y);
+      (o.text || '').split('\n').forEach((ln, i) => ctx.fillText(ln, o.x, o.y + i*o.fontSize*1.25));
     }
   }
 
@@ -1820,8 +1859,9 @@ function boundsOf(o){
     const xs = o.points.map(p=>p.x), ys = o.points.map(p=>p.y);
     return { x:Math.min(...xs), y:Math.min(...ys), w:Math.max(...xs)-Math.min(...xs), h:Math.max(...ys)-Math.min(...ys) };
   } else if(o.type === 'text'){
-    const w = (o.text.length||1)*o.fontSize*0.55;
-    return { x:o.x, y:o.y-o.fontSize, w:w, h:o.fontSize+6 };
+    const ls = (o.text || '').split('\n');
+    const w = Math.max(1, ...ls.map(l => l.length)) * o.fontSize * 0.55;
+    return { x:o.x, y:o.y-o.fontSize, w:w, h:ls.length*o.fontSize*1.25 + 6 - (o.fontSize*0.25) };
   }
   return { x:o.x, y:o.y, w:o.w, h:o.h };
 }
@@ -1854,26 +1894,63 @@ function wrapText(text, x, y, maxWidth, lineHeight){
 }
 
 function wrapLines(text, maxWidth){
-  const words = text.split(/\s+/);
-  let line = '';
-  const lines = [];
-  for(let n=0; n<words.length; n++){
-    const test = line + words[n] + ' ';
-    if(ctx.measureText(test).width > maxWidth && line){
-      lines.push(line.trim());
-      line = words[n] + ' ';
-    } else {
-      line = test;
+  // honours the line breaks you typed, then word-wraps each paragraph
+  const out = [];
+  String(text).split('\n').forEach(par => {
+    const words = par.split(/\s+/).filter(Boolean);
+    let line = '';
+    if(!words.length){ out.push(''); return; }
+    for(let n=0; n<words.length; n++){
+      const test = line + words[n] + ' ';
+      if(ctx.measureText(test).width > maxWidth && line){
+        out.push(line.trim());
+        line = words[n] + ' ';
+      } else {
+        line = test;
+      }
     }
-  }
-  lines.push(line.trim());
-  return lines;
+    out.push(line.trim());
+  });
+  return out;
+}
+
+// ---- label legibility: pick a text color that contrasts with what is behind it ----
+function parseHex(c){
+  if(typeof c !== 'string') return null;
+  let m = c.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if(!m) return null;
+  let h = m[1]; if(h.length === 3) h = h.split('').map(x => x+x).join('');
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+}
+function lumOf(rgb){
+  const f = v => { v /= 255; return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); };
+  return 0.2126*f(rgb[0]) + 0.7152*f(rgb[1]) + 0.0722*f(rgb[2]);
+}
+function contrastRatio(a, b){
+  const la = lumOf(a), lb = lumOf(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+function shapeBackdropRGB(o){
+  const bgv = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  const bg = parseHex(bgv) || [238,236,230];
+  const f = o.fill && parseHex(o.fill);
+  if(!f) return bg;
+  const a = typeof o.fillOpacity === 'number' ? o.fillOpacity : 0.6;
+  return [0,1,2].map(i => Math.round(f[i]*a + bg[i]*(1-a)));
+}
+const rgbCss = rgb => 'rgb(' + rgb.join(',') + ')';
+function readableLabelColor(o){
+  const text = parseHex(o.color);
+  const back = shapeBackdropRGB(o);
+  if(!text) return o.color;
+  if(contrastRatio(text, back) >= 3) return o.color;
+  return lumOf(back) > 0.4 ? '#111214' : '#ffffff';
 }
 
 function drawShapeLabel(o, cx, cy, maxWidth){
   if(!o.label) return;
   ctx.save();
-  ctx.fillStyle = o.color;
+  ctx.fillStyle = readableLabelColor(o);
   const fs = o.labelSize || 14;
   ctx.font = fs + 'px Inter, sans-serif';
   ctx.textAlign = 'center';
